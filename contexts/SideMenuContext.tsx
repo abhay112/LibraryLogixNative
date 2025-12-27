@@ -1,0 +1,33 @@
+import React, { createContext, useContext, useState } from 'react';
+
+interface SideMenuContextType {
+  isOpen: boolean;
+  openMenu: () => void;
+  closeMenu: () => void;
+  toggleMenu: () => void;
+}
+
+const SideMenuContext = createContext<SideMenuContextType | undefined>(undefined);
+
+export const SideMenuProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const openMenu = () => setIsOpen(true);
+  const closeMenu = () => setIsOpen(false);
+  const toggleMenu = () => setIsOpen((prev) => !prev);
+
+  return (
+    <SideMenuContext.Provider value={{ isOpen, openMenu, closeMenu, toggleMenu }}>
+      {children}
+    </SideMenuContext.Provider>
+  );
+};
+
+export const useSideMenu = () => {
+  const context = useContext(SideMenuContext);
+  if (!context) {
+    throw new Error('useSideMenu must be used within SideMenuProvider');
+  }
+  return context;
+};
+

@@ -1,0 +1,103 @@
+import { Stack } from 'expo-router';
+import { Provider } from 'react-redux';
+import { ThemeProvider } from '@/contexts/ThemeContext';
+import { AuthProvider } from '@/contexts/AuthContext';
+import { SideMenuProvider } from '@/contexts/SideMenuContext';
+import { StatusBar } from 'expo-status-bar';
+import { useTheme } from '@/contexts/ThemeContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { useSideMenu } from '@/contexts/SideMenuContext';
+import { useEffect } from 'react';
+import { useFonts } from 'expo-font';
+import * as SplashScreen from 'expo-splash-screen';
+import { SideMenu } from '@/components/SideMenu';
+import { store } from '@/store/store';
+import { formatRole } from '@/utils/format';
+
+SplashScreen.preventAutoHideAsync();
+
+function GlobalSideMenu() {
+  let user;
+  try {
+    const authContext = useAuth();
+    user = authContext.user;
+  } catch (error) {
+    // Auth context not available
+    user = null;
+  }
+  
+  const { isOpen, closeMenu } = useSideMenu();
+
+  // Use mock user for testing if not authenticated
+  const displayUser = user || {
+    name: 'John Doe',
+    email: 'john.doe@example.com',
+    role: 'student' as const,
+  };
+
+  return (
+    <SideMenu
+      isOpen={isOpen}
+      onClose={closeMenu}
+      userName={displayUser.name || 'User'}
+      userEmail={displayUser.email || ''}
+      userRole={formatRole(displayUser.role)}
+    />
+  );
+}
+
+function RootLayoutNav() {
+  const { theme, colorScheme } = useTheme();
+  const { isAuthenticated, isLoading } = useAuth();
+
+  return (
+    <>
+      <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: {
+            backgroundColor: theme.colors.background,
+          },
+        }}
+      >
+        <Stack.Screen name="(auth)" />
+        <Stack.Screen 
+          name="(tabs)" 
+          options={{
+            // Only accessible when authenticated
+            gestureEnabled: isAuthenticated,
+          }}
+        />
+      </Stack>
+      
+      {/* Global Side Menu - Available on all authenticated pages */}
+      {isAuthenticated && <GlobalSideMenu />}
+    </>
+  );
+}
+
+export default function RootLayout() {
+  const [fontsLoaded] = useFonts({
+    // Add custom fonts if needed
+  });
+
+  useEffect(() => {
+    if (fontsLoaded) {
+      SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded]);
+
+  return (
+    <Provider store={store}>
+      <ThemeProvider>
+        <AuthProvider>
+          <SideMenuProvider>
+            <RootLayoutNav />
+          </SideMenuProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </Provider>
+  );
+}
+
