@@ -3,25 +3,35 @@ import { API_ENDPOINTS } from '@/config/api';
 
 export interface Fee {
   _id: string;
+  id?: string; // Duplicate of _id in API response
+  adminId: string;
   studentId: string;
   studentName?: string;
-  mobile?: string;
+  mobile?: string | number;
+  feesSubmissionDate?: string;
+  feesDueDate?: string;
+  isRoundFigure?: boolean;
   fees: Array<{
     date: string;
     amount: number;
     feesStatus: boolean;
     shift: string;
   }>;
-  status?: 'paid' | 'overdue' | 'due_soon' | 'pending';
-  feesDueDate?: string;
+  deleted?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  __v?: number;
   remainingDays?: number;
   isOverdue?: boolean;
+  daysOverdue?: number;
+  status?: 'paid' | 'overdue' | 'due_soon' | 'pending';
+  nextDueDate?: string;
+  submissionMonthYear?: string; // YYYY-MM format
+  dueMonthYear?: string; // YYYY-MM format
   hasNoDues?: boolean;
-  isRoundFigure?: boolean;
   originalAmount?: number;
   adjustedAmount?: number;
   adjustmentReason?: string;
-  daysOverdue?: number;
   student?: {
     name: string;
     email: string;

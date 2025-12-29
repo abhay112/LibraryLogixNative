@@ -1,12 +1,52 @@
 import { baseApi } from './baseApi';
 import { API_ENDPOINTS } from '@/config/api';
 
+export interface AttendanceStats {
+  presentCount: number;
+  absentCount: number;
+}
+
+export interface FeesStats {
+  totalFeesRecords: number;
+  pendingFees: number;
+}
+
+export interface GenderStats {
+  male: number;
+  female: number;
+  other: number;
+}
+
+export interface SeatLayoutInfo {
+  seatLayout: {
+    _id: string;
+    libraryId: string;
+    adminId: string;
+    rows: number;
+    columns: number;
+    totalSeats: number;
+    availableSeats: number;
+    fixedSeats: number;
+    blockedSeats: number;
+    isActive: boolean;
+    deleted: boolean;
+    createdAt: string;
+    updatedAt: string;
+    __v: number;
+  };
+  seats: any[];
+}
+
 export interface AdminStats {
-  totalStudents: number;
-  activeStudents: number;
-  totalAttendance: number;
-  feesCollected: number;
-  feesPending: number;
+  attendance: AttendanceStats;
+  fees: FeesStats;
+  genderStats: GenderStats;
+  seatLayout: {
+    MORNING: SeatLayoutInfo;
+    AFTERNOON: SeatLayoutInfo;
+    EVENING: SeatLayoutInfo;
+    FULL_DAY: SeatLayoutInfo;
+  };
 }
 
 export interface AdminStatsResponse {

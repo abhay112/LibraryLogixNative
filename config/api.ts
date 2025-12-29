@@ -30,6 +30,7 @@ export const API_ENDPOINTS = {
   ATTENDANCE: {
     CREATE: '/admin/attendance/create',
     BY_DATE: (date: string, adminId: string) => `/admin/attendance/${date}/${adminId}`,
+    ALL: (adminId: string) => `/admin/attendance/all/${adminId}`,
     ASSIGN: '/admin/attendance/assign',
     VACANT: '/admin/attendance/vacant',
     STUDENT_BY_DATE: (studentId: string, date: string) => `/admin/attendance/student/${studentId}/date/${date}`,

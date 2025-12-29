@@ -19,7 +19,7 @@ import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { EmptyState } from '@/components/EmptyState';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { format } from 'date-fns';
-import { useGetVisitorsQuery, useMarkVisitorExitMutation } from '@/services/api/visitorsApi';
+import { useGetVisitorsQuery, useMarkVisitorExitMutation, useGetVisitorAnalyticsQuery } from '@/services/api/visitorsApi';
 import { formatRole } from '@/utils/format';
 
 const statusColors: Record<string, 'success' | 'warning' | 'error' | 'info'> = {
@@ -54,7 +54,22 @@ export default function VisitorsScreen() {
 
   const [markExit, { isLoading: exiting }] = useMarkVisitorExitMutation();
 
+  // Fetch visitor analytics
+  const {
+    data: analyticsData,
+    isLoading: analyticsLoading,
+  } = useGetVisitorAnalyticsQuery(
+    {
+      adminId: user?._id || user?.id || '',
+      libraryId: user?.libraryId || '',
+      startDate: new Date(new Date().setMonth(new Date().getMonth() - 1)).toISOString().split('T')[0],
+      endDate: new Date().toISOString().split('T')[0],
+    },
+    { skip: (!user?._id && !user?.id) || !user?.libraryId }
+  );
+
   const visitors = visitorsData?.data || [];
+  const analytics = analyticsData?.data;
 
   const handleExit = async (visitorId: string) => {
     try {
@@ -147,6 +162,37 @@ export default function VisitorsScreen() {
           />
         </View>
       </View>
+
+      {/* Analytics Summary */}
+      {analytics && (
+        <View style={styles.analyticsContainer}>
+          <Card style={styles.analyticsCard}>
+            <Text style={[styles.analyticsTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
+              Visitor Analytics
+            </Text>
+            <View style={styles.analyticsGrid}>
+              <View style={styles.analyticsItem}>
+                <Text style={[styles.analyticsValue, { color: theme.colors.primary, ...theme.typography.h2 }]}>
+                  {analytics.totalVisitors || 0}
+                </Text>
+                <Text style={[styles.analyticsLabel, { color: theme.colors.textSecondary }]}>Total</Text>
+              </View>
+              <View style={styles.analyticsItem}>
+                <Text style={[styles.analyticsValue, { color: theme.colors.success, ...theme.typography.h2 }]}>
+                  {analytics.activeVisitors || 0}
+                </Text>
+                <Text style={[styles.analyticsLabel, { color: theme.colors.textSecondary }]}>Active</Text>
+              </View>
+              <View style={styles.analyticsItem}>
+                <Text style={[styles.analyticsValue, { color: theme.colors.info, ...theme.typography.h2 }]}>
+                  {analytics.exitedVisitors || 0}
+                </Text>
+                <Text style={[styles.analyticsLabel, { color: theme.colors.textSecondary }]}>Exited</Text>
+              </View>
+            </View>
+          </Card>
+        </View>
+      )}
 
       {/* Filters */}
       <View style={styles.filters}>
@@ -297,6 +343,31 @@ const styles = StyleSheet.create({
   },
   exitButton: {
     minWidth: 80,
+  },
+  analyticsContainer: {
+    padding: 16,
+    paddingBottom: 0,
+  },
+  analyticsCard: {
+    padding: 16,
+  },
+  analyticsTitle: {
+    marginBottom: 16,
+    fontWeight: '600',
+  },
+  analyticsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  analyticsItem: {
+    alignItems: 'center',
+  },
+  analyticsValue: {
+    marginBottom: 4,
+    fontWeight: '700',
+  },
+  analyticsLabel: {
+    fontSize: 12,
   },
 });
 

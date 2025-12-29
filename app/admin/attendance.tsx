@@ -10,7 +10,7 @@ import {
   Platform,
   TextInput,
 } from 'react-native';
-import { useRouter, Redirect } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { DashboardHeader } from '@/components/DashboardHeader';
@@ -31,15 +31,9 @@ import {
 } from '@/services/api/attendanceApi';
 
 export default function AttendanceScreen() {
+  const { theme } = useTheme();
   const { user, isLoading: authLoading } = useAuth();
-  
-  if (authLoading) {
-    return null;
-  }
-  
-  // Redirect to admin/student route based on role
-  const routePrefix = user?.role === 'admin' ? '/admin' : '/student';
-  return <Redirect href={`${routePrefix}/attendance`} />;
+  const router = useRouter();
   const today = new Date();
   const todayStr = format(today, 'yyyy-MM-dd');
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
@@ -62,14 +56,23 @@ export default function AttendanceScreen() {
     { skip: (!user?._id && !user?.id) || !showAllAttendance || authLoading }
   );
 
-  const allAttendanceRecords = allAttendanceData?.data || [];
+  // Extract attendance records from the nested structure
+  const attendanceDayRecords = allAttendanceData?.data?.attendanceRecords || [];
+  
+  // Flatten all individual attendance records for calendar display
+  const allAttendanceRecords = attendanceDayRecords.flatMap(dayRecord => 
+    dayRecord.attendanceRecords.map(record => ({
+      ...record,
+      date: dayRecord.date, // Add date from parent record
+    }))
+  );
   
   // Update calendar when all attendance is loaded
   React.useEffect(() => {
-    if (showAllAttendance && allAttendanceRecords.length > 0) {
+    if (showAllAttendance && attendanceDayRecords.length > 0) {
       // Calendar will automatically update with the new data
     }
-  }, [showAllAttendance, allAttendanceRecords]);
+  }, [showAllAttendance, attendanceDayRecords]);
 
   // Fetch attendance data for selected date
   const {
@@ -223,11 +226,29 @@ export default function AttendanceScreen() {
   const [markMultipleAbsent] = useMarkMultipleStudentsAbsentMutation();
   const [selectedStudentsForAbsent, setSelectedStudentsForAbsent] = useState<string[]>([]);
 
+  // Extract data from response - handle both seats array and attendanceRecords
   const seats = attendanceData?.data?.seats || [];
   const attendance = attendanceData?.data?.attendance;
+  const attendanceRecords = attendanceData?.data?.attendanceRecords || [];
+  const seatLayout = attendanceData?.data?.seatLayout;
   const shiftReport = attendanceByShiftData?.data;
+  
+  // Debug: Log attendance data
+  React.useEffect(() => {
+    if (attendanceData) {
+      console.log('📊 Attendance Data:', {
+        hasAttendance: !!attendance,
+        hasSeats: !!seats,
+        seatsCount: seats.length,
+        hasAttendanceRecords: !!attendanceRecords,
+        attendanceRecordsCount: attendanceRecords.length,
+        attendance: attendance,
+        fullResponse: attendanceData,
+      });
+    }
+  }, [attendanceData, attendance, seats, attendanceRecords]);
 
-  const handleMarkAbsent = async (studentId: string, date: string = selectedDate) => {
+  const handleMarkAbsent = async (studentId: string, date: string = selectedDate, shift: string = 'FULL_DAY') => {
     if (!user?._id && !user?.id || !user?.libraryId) {
       Alert.alert('Error', 'User information is missing');
       return;
@@ -237,7 +258,7 @@ export default function AttendanceScreen() {
       await markAbsent({
         studentId,
         date,
-        libraryId: user.libraryId,
+        shift: shift as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'FULL_DAY',
         adminId: user._id || user.id || '',
       }).unwrap();
       Alert.alert('Success', 'Student marked as absent');
@@ -558,7 +579,7 @@ export default function AttendanceScreen() {
           <Card style={styles.allAttendanceCard}>
             <View style={styles.allAttendanceHeader}>
               <Text style={[styles.allAttendanceTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
-                All Attendance Records ({allAttendanceRecords.length})
+                All Attendance Records ({attendanceDayRecords.length} days)
               </Text>
             </View>
             {isLoadingAllAttendance ? (
@@ -569,11 +590,11 @@ export default function AttendanceScreen() {
                 title="Error loading attendance"
                 message="Please try again later"
               />
-            ) : allAttendanceRecords.length > 0 ? (
+            ) : attendanceDayRecords.length > 0 ? (
               <FlatList
-                data={allAttendanceRecords}
-                renderItem={({ item }) => {
-                  const recordDate = item.date || item.attendanceDate || item.createdAt;
+                data={attendanceDayRecords}
+                renderItem={({ item: dayRecord }) => {
+                  const recordDate = dayRecord.date;
                   let dateStr = 'N/A';
                   let formattedDate = 'Date N/A';
                   
@@ -594,32 +615,41 @@ export default function AttendanceScreen() {
                             {formattedDate}
                           </Text>
                           <Text style={[styles.attendanceRecordStatus, { color: theme.colors.textSecondary, ...theme.typography.body }]}>
-                            Status: {item.status || 'N/A'}
+                            Present: {dayRecord.totalPresent} | Absent: {dayRecord.totalAbsent}
                           </Text>
-                          {item.shift && (
                             <Text style={[styles.attendanceRecordShift, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-                              Shift: {item.shift}
+                            Morning: {dayRecord.morningPresent} | Afternoon: {dayRecord.afternoonPresent} | Evening: {dayRecord.eveningPresent} | Full Day: {dayRecord.fullDayPresent}
                             </Text>
-                          )}
-                          {item.studentId && (
                             <Text style={[styles.attendanceRecordShift, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-                              Student ID: {item.studentId}
+                            Total Records: {dayRecord.attendanceRecords.length}
+                            </Text>
+                        </View>
+                        <Badge
+                          label={`${dayRecord.totalPresent}/${dayRecord.totalPresent + dayRecord.totalAbsent}`}
+                          variant={dayRecord.totalAbsent === 0 ? 'success' : 'warning'}
+                        />
+                      </View>
+                      {/* Show individual student records */}
+                      {dayRecord.attendanceRecords.length > 0 && (
+                        <View style={styles.studentRecordsContainer}>
+                          {dayRecord.attendanceRecords.slice(0, 3).map((record) => (
+                            <View key={record._id} style={styles.studentRecordItem}>
+                              <Text style={[styles.studentRecordName, { color: theme.colors.textPrimary, ...theme.typography.caption }]}>
+                                {record.studentId?.name || 'Unknown'} - {record.shift} - {record.status}
+                              </Text>
+                            </View>
+                          ))}
+                          {dayRecord.attendanceRecords.length > 3 && (
+                            <Text style={[styles.moreRecordsText, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
+                              +{dayRecord.attendanceRecords.length - 3} more
                             </Text>
                           )}
                         </View>
-                        <Badge
-                          label={item.status || 'UNKNOWN'}
-                          variant={
-                            item.status === 'PRESENT' ? 'success' :
-                            item.status === 'ABSENT' ? 'error' :
-                            item.status === 'LATE' ? 'warning' : 'info'
-                          }
-                        />
-                      </View>
+                      )}
                     </Card>
                   );
                 }}
-                keyExtractor={(item, index) => item._id || `${item.date || item.attendanceDate || index}-${index}`}
+                keyExtractor={(item) => item._id || item.date}
                 scrollEnabled={false}
               />
             ) : (
@@ -648,7 +678,7 @@ export default function AttendanceScreen() {
               title="Error loading attendance"
               message="Please try again later"
             />
-          ) : (
+          ) : seats.length > 0 ? (
             <View style={styles.seatsContainer}>
               <FlatList
                 data={seats}
@@ -657,15 +687,137 @@ export default function AttendanceScreen() {
                 numColumns={4}
                 scrollEnabled={false}
                 contentContainerStyle={styles.seatsGrid}
-                ListEmptyComponent={
-                  <EmptyState
-                    icon="event-seat"
-                    title="No seats available"
-                    message="Seat layout not configured"
-                  />
-                }
               />
             </View>
+          ) : attendanceRecords.length > 0 ? (
+            <View style={styles.attendanceRecordsContainer}>
+              {/* Show attendance summary */}
+              {attendance && (
+                <Card style={styles.summaryCard}>
+                  <Text style={[styles.summaryTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
+                    Attendance Summary
+                  </Text>
+                  <View style={styles.summaryGrid}>
+                    <View style={styles.summaryItem}>
+                      <Text style={[styles.summaryValue, { color: theme.colors.success, ...theme.typography.h2 }]}>
+                        {attendance.totalPresent || 0}
+                      </Text>
+                      <Text style={[styles.summaryLabel, { color: theme.colors.textSecondary }]}>Present</Text>
+                    </View>
+                    <View style={styles.summaryItem}>
+                      <Text style={[styles.summaryValue, { color: theme.colors.error, ...theme.typography.h2 }]}>
+                        {attendance.totalAbsent || 0}
+                      </Text>
+                      <Text style={[styles.summaryLabel, { color: theme.colors.textSecondary }]}>Absent</Text>
+                    </View>
+                    <View style={styles.summaryItem}>
+                      <Text style={[styles.summaryValue, { color: theme.colors.primary, ...theme.typography.h2 }]}>
+                        {attendance.morningPresent || 0}
+                      </Text>
+                      <Text style={[styles.summaryLabel, { color: theme.colors.textSecondary }]}>Morning</Text>
+                    </View>
+                    <View style={styles.summaryItem}>
+                      <Text style={[styles.summaryValue, { color: theme.colors.info, ...theme.typography.h2 }]}>
+                        {attendance.afternoonPresent || 0}
+                      </Text>
+                      <Text style={[styles.summaryLabel, { color: theme.colors.textSecondary }]}>Afternoon</Text>
+                    </View>
+                    <View style={styles.summaryItem}>
+                      <Text style={[styles.summaryValue, { color: theme.colors.warning, ...theme.typography.h2 }]}>
+                        {attendance.eveningPresent || 0}
+                      </Text>
+                      <Text style={[styles.summaryLabel, { color: theme.colors.textSecondary }]}>Evening</Text>
+                    </View>
+                    <View style={styles.summaryItem}>
+                      <Text style={[styles.summaryValue, { color: theme.colors.primary, ...theme.typography.h2 }]}>
+                        {attendance.fullDayPresent || 0}
+                      </Text>
+                      <Text style={[styles.summaryLabel, { color: theme.colors.textSecondary }]}>Full Day</Text>
+                    </View>
+                  </View>
+                </Card>
+              )}
+              
+              {/* Show attendance records list */}
+              <View style={styles.recordsList}>
+                <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
+                  Attendance Records ({attendanceRecords.length})
+                </Text>
+                <FlatList
+                  data={attendanceRecords}
+                  renderItem={({ item }) => {
+                    const studentId = typeof item.studentId === 'object' ? item.studentId : null;
+                    const studentName = studentId?.name || 'Unknown Student';
+                    const studentEmail = studentId?.email || '';
+                    const actualStudentId = typeof item.studentId === 'string' ? item.studentId : studentId?._id || '';
+                    
+                    return (
+                      <Card style={styles.recordCard}>
+                        <View style={styles.recordRow}>
+                          <View style={styles.recordInfo}>
+                            <Text style={[styles.recordName, { color: theme.colors.textPrimary, ...theme.typography.bodyLarge }]}>
+                              {studentName}
+                            </Text>
+                            {studentEmail && (
+                              <Text style={[styles.recordEmail, { color: theme.colors.textSecondary, ...theme.typography.body }]}>
+                                {studentEmail}
+                              </Text>
+                            )}
+                            <View style={styles.recordDetails}>
+                              <Text style={[styles.recordDetail, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
+                                Shift: {item.shift}
+                              </Text>
+                              {item.checkInTime && (
+                                <Text style={[styles.recordDetail, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
+                                  Check-in: {format(new Date(item.checkInTime), 'HH:mm')}
+                                </Text>
+                              )}
+                              {item.checkOutTime && (
+                                <Text style={[styles.recordDetail, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
+                                  Check-out: {format(new Date(item.checkOutTime), 'HH:mm')}
+                                </Text>
+                              )}
+                              {item.totalHours !== undefined && (
+                                <Text style={[styles.recordDetail, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
+                                  Hours: {item.totalHours}
+                                </Text>
+                              )}
+                            </View>
+                          </View>
+                          <View style={styles.recordActions}>
+                            <Badge
+                              label={item.status}
+                              variant={
+                                item.status === 'PRESENT' ? 'success' :
+                                item.status === 'ABSENT' ? 'error' :
+                                item.status === 'LATE' ? 'warning' : 'info'
+                              }
+                            />
+                            {item.status === 'PRESENT' && (
+                              <Button
+                                title="Mark Absent"
+                                onPress={() => handleMarkAbsent(actualStudentId, selectedDate, item.shift)}
+                                variant="outline"
+                                size="small"
+                                style={styles.markAbsentButton}
+                              />
+                            )}
+            </View>
+                        </View>
+                      </Card>
+                    );
+                  }}
+                  keyExtractor={(item) => item._id}
+                  scrollEnabled={false}
+                />
+              </View>
+            </View>
+          ) : (
+            <EmptyState
+              icon="event-seat"
+              title="No attendance data"
+              message={seatLayout ? "No attendance records found for this date. Seats are available but no students have checked in." : "Seat layout not configured. Please configure seats first."}
+            />
           )
         ) : (
           shiftLoading ? (
@@ -750,7 +902,10 @@ export default function AttendanceScreen() {
                           {item.status === 'PRESENT' && (
                             <Button
                               title="Mark Absent"
-                              onPress={() => handleMarkAbsent(item.studentId)}
+                              onPress={() => {
+                                const studentId = typeof item.studentId === 'object' ? item.studentId?._id : item.studentId;
+                                handleMarkAbsent(studentId || '', selectedDate, item.shift);
+                              }}
                               variant="outline"
                               size="small"
                               style={styles.markAbsentButton}
@@ -1088,6 +1243,65 @@ const styles = StyleSheet.create({
   },
   attendanceRecordShift: {
     marginTop: 2,
+  },
+  studentRecordsContainer: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E5EA',
+  },
+  studentRecordItem: {
+    marginBottom: 4,
+  },
+  studentRecordName: {
+    fontSize: 12,
+  },
+  moreRecordsText: {
+    marginTop: 4,
+    fontStyle: 'italic',
+  },
+  attendanceRecordsContainer: {
+    padding: 16,
+  },
+  recordsList: {
+    marginTop: 16,
+  },
+  sectionTitle: {
+    marginBottom: 16,
+    fontWeight: '700',
+  },
+  recordCard: {
+    marginBottom: 12,
+    padding: 16,
+  },
+  recordRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  recordInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  recordName: {
+    marginBottom: 4,
+    fontWeight: '600',
+  },
+  recordEmail: {
+    marginBottom: 8,
+  },
+  recordDetails: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginTop: 4,
+  },
+  recordDetail: {
+    marginRight: 8,
+  },
+  recordActions: {
+    alignItems: 'flex-end',
+    gap: 8,
   },
 });
 

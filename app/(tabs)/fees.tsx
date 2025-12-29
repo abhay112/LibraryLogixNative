@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   FlatList,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, Redirect } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { DashboardHeader } from '@/components/DashboardHeader';
@@ -22,10 +22,15 @@ import { format } from 'date-fns';
 import { useGetFeesQuery } from '@/services/api/feesApi';
 
 export default function FeesScreen() {
-  const { theme } = useTheme();
-  const { user } = useAuth();
-  const router = useRouter();
-  const [filter, setFilter] = useState<'all' | 'pending' | 'paid' | 'overdue' | 'due_soon'>('all');
+  const { user, isLoading: authLoading } = useAuth();
+  
+  if (authLoading) {
+    return null;
+  }
+  
+  // Redirect to admin/student route based on role
+  const routePrefix = user?.role === 'admin' ? '/admin' : '/student';
+  return <Redirect href={`${routePrefix}/fees`} />;
 
   // Fetch fees using RTK Query
   const {
@@ -41,7 +46,10 @@ export default function FeesScreen() {
       page: 1,
       limit: 50,
     },
-    { skip: (!user?._id && !user?.id) || !user?.libraryId }
+    { 
+      skip: (!user?._id && !user?.id) || !user?.libraryId || authLoading,
+      refetchOnMountOrArgChange: true,
+    }
   );
 
   const fees = feesData?.data || [];

@@ -49,6 +49,7 @@ export interface LoginResponse {
       role: 'admin' | 'student';
       isActive: boolean;
       libraryId?: string;
+      libraries?: string[]; // Array of library IDs for admin
     };
   };
 }

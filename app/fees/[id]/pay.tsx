@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  TextInput,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -14,7 +15,7 @@ import { Button } from '@/components/Button';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { format } from 'date-fns';
-import { useGetFeesByIdQuery, useUpdateFeesMutation } from '@/services/api/feesApi';
+import { useGetFeesByIdQuery, useUpdateFeesMutation, useApplyRoundFigureFeesMutation } from '@/services/api/feesApi';
 
 const paymentMethods = [
   { id: 'card', name: 'Credit/Debit Card', icon: 'credit-card' },
@@ -36,9 +37,38 @@ export default function PaymentScreen() {
   } = useGetFeesByIdQuery(id as string, { skip: !id });
 
   const [updateFees, { isLoading: updating }] = useUpdateFeesMutation();
+  const [applyRoundFigure, { isLoading: applyingRoundFigure }] = useApplyRoundFigureFeesMutation();
 
   const fee = feeData?.data;
-  const loading = feeLoading || updating;
+  const loading = feeLoading || updating || applyingRoundFigure;
+  const [showRoundFigure, setShowRoundFigure] = useState(false);
+  const [roundFigureAmount, setRoundFigureAmount] = useState('');
+
+  const handleApplyRoundFigure = async () => {
+    if (!roundFigureAmount || !id) {
+      Alert.alert('Error', 'Please enter a round figure amount');
+      return;
+    }
+
+    const amount = parseFloat(roundFigureAmount);
+    if (isNaN(amount) || amount <= 0) {
+      Alert.alert('Error', 'Please enter a valid amount');
+      return;
+    }
+
+    try {
+      await applyRoundFigure({
+        feesId: id as string,
+        roundFigureAmount: amount,
+      }).unwrap();
+      
+      Alert.alert('Success', 'Round figure applied successfully');
+      setShowRoundFigure(false);
+      setRoundFigureAmount('');
+    } catch (error: any) {
+      Alert.alert('Error', error?.data?.message || 'Failed to apply round figure');
+    }
+  };
 
   const handlePay = async () => {
     if (!selectedMethod) {
@@ -142,6 +172,52 @@ export default function PaymentScreen() {
                   )}
                 </TouchableOpacity>
               ))}
+            </Card>
+
+            <Card style={styles.methodsCard}>
+              <View style={styles.roundFigureHeader}>
+                <Text style={[styles.methodsTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
+                  Round Figure Adjustment
+                </Text>
+                <Button
+                  title={showRoundFigure ? 'Cancel' : 'Apply Round Figure'}
+                  onPress={() => {
+                    setShowRoundFigure(!showRoundFigure);
+                    setRoundFigureAmount('');
+                  }}
+                  variant="outline"
+                  size="small"
+                />
+              </View>
+              {showRoundFigure && (
+                <View style={styles.roundFigureContent}>
+                  <Text style={[styles.roundFigureLabel, { color: theme.colors.textSecondary, ...theme.typography.body }]}>
+                    Enter round figure amount:
+                  </Text>
+                  <TextInput
+                    style={[
+                      styles.roundFigureInput,
+                      {
+                        backgroundColor: theme.colors.surface,
+                        borderColor: theme.colors.border,
+                        color: theme.colors.textPrimary,
+                      },
+                    ]}
+                    placeholder="Enter amount"
+                    placeholderTextColor={theme.colors.textSecondary}
+                    value={roundFigureAmount}
+                    onChangeText={setRoundFigureAmount}
+                    keyboardType="numeric"
+                  />
+                  <Button
+                    title="Apply"
+                    onPress={handleApplyRoundFigure}
+                    variant="primary"
+                    loading={applyingRoundFigure}
+                    style={styles.roundFigureButton}
+                  />
+                </View>
+              )}
             </Card>
           </ScrollView>
 
@@ -269,6 +345,28 @@ const styles = StyleSheet.create({
   },
   payButton: {
     minWidth: 120,
+  },
+  roundFigureHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  roundFigureContent: {
+    marginTop: 12,
+  },
+  roundFigureLabel: {
+    marginBottom: 8,
+  },
+  roundFigureInput: {
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 12,
+    fontSize: 16,
+  },
+  roundFigureButton: {
+    width: '100%',
   },
 });
 

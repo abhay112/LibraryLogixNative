@@ -8,7 +8,7 @@ import {
   FlatList,
   TextInput,
 } from 'react-native';
-import { useRouter, Redirect } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { DashboardHeader } from '@/components/DashboardHeader';
@@ -24,15 +24,11 @@ import { useGetStudentsQuery } from '@/services/api/studentsApi';
 
 
 export default function StudentsScreen() {
+  const { theme } = useTheme();
   const { user, isLoading: authLoading } = useAuth();
-  
-  if (authLoading) {
-    return null;
-  }
-  
-  // Redirect to admin/student route based on role
-  const routePrefix = user?.role === 'admin' ? '/admin' : '/student';
-  return <Redirect href={`${routePrefix}/students`} />;
+  const router = useRouter();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState(1);
 
   // Fetch students using RTK Query
   const {

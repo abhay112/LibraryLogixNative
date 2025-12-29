@@ -1,7 +1,6 @@
 import { Tabs, Redirect } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { ProtectedRoute } from '@/components/ProtectedRoute';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
 // Tab configuration constant - Order: Home (index) -> Students -> Seats -> Attendance -> Fees
@@ -33,7 +32,7 @@ const tabScreens = [
   },
 ];
 
-export default function TabsLayout() {
+export default function StudentLayout() {
   const { theme } = useTheme();
   const { isAuthenticated, isLoading, user } = useAuth();
 
@@ -67,8 +66,34 @@ export default function TabsLayout() {
     return <Redirect href="/(auth)/login" />;
   }
 
-  // Redirect to admin or student routes based on user role
-  const routePrefix = user?.role === 'admin' ? '/admin' : '/student';
-  return <Redirect href={`${routePrefix}/`} />;
+  // Redirect admin users
+  if (user?.role === 'admin') {
+    return <Redirect href="/admin/" />;
+  }
+
+  // Show tabs for student users
+  return (
+    <Tabs 
+      screenOptions={screenOptions}
+      initialRouteName="index"
+    >
+      {tabScreens.map((tab) => (
+        <Tabs.Screen
+          key={tab.name}
+          name={tab.name}
+          options={{
+            title: tab.title,
+            tabBarIcon: ({ color, size, focused }) => (
+              <Icon 
+                name={tab.icon as any} 
+                size={24} 
+                color={color} 
+              />
+            ),
+          }}
+        />
+      ))}
+    </Tabs>
+  );
 }
 

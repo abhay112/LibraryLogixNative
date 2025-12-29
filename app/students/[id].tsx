@@ -23,6 +23,7 @@ import {
   useActivateStudentMutation,
   useInactivateStudentMutation,
   useChangeStudentShiftMutation,
+  useGetOverallAttendanceQuery,
 } from '@/services/api/studentsApi';
 import { useGetFeesByStudentQuery } from '@/services/api/feesApi';
 import { useGetStudentAttendanceHistoryQuery } from '@/services/api/attendanceApi';
@@ -58,6 +59,18 @@ export default function StudentDetailScreen() {
     { skip: !id }
   );
 
+  // Fetch overall attendance statistics
+  const {
+    data: overallAttendanceData,
+    isLoading: overallAttendanceLoading,
+  } = useGetOverallAttendanceQuery(
+    {
+      libraryId: user?.libraryId || '',
+      studentId: id as string,
+    },
+    { skip: !id || !user?.libraryId }
+  );
+
   const [blockStudent] = useBlockStudentMutation();
   const [activateStudent] = useActivateStudentMutation();
   const [inactivateStudent] = useInactivateStudentMutation();
@@ -67,6 +80,7 @@ export default function StudentDetailScreen() {
   const fees = feesData?.data || [];
   const attendanceHistory = attendanceData?.data?.attendanceRecords || [];
   const attendanceSummary = attendanceData?.data?.summary;
+  const overallAttendance = overallAttendanceData?.data;
 
   const handleBlock = async () => {
     Alert.alert(
@@ -293,7 +307,7 @@ export default function StudentDetailScreen() {
         </Card>
 
         {/* Attendance Summary */}
-        {attendanceSummary && (
+        {(attendanceSummary || overallAttendance) && (
           <Card style={styles.summaryCard}>
             <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
               Attendance Summary
@@ -301,22 +315,32 @@ export default function StudentDetailScreen() {
             <View style={styles.statsGrid}>
               <View style={styles.statItem}>
                 <Text style={[styles.statValue, { color: theme.colors.primary, ...theme.typography.h2 }]}>
-                  {attendanceSummary.totalDays || 0}
+                  {overallAttendance?.totalStudents || attendanceSummary?.totalDays || 0}
                 </Text>
-                <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Total Days</Text>
+                <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
+                  {overallAttendance ? 'Total Students' : 'Total Days'}
+                </Text>
               </View>
               <View style={styles.statItem}>
                 <Text style={[styles.statValue, { color: theme.colors.success, ...theme.typography.h2 }]}>
-                  {attendanceSummary.presentDays || 0}
+                  {overallAttendance?.totalPresent || attendanceSummary?.presentDays || 0}
                 </Text>
                 <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Present</Text>
               </View>
               <View style={styles.statItem}>
                 <Text style={[styles.statValue, { color: theme.colors.error, ...theme.typography.h2 }]}>
-                  {attendanceSummary.absentDays || 0}
+                  {overallAttendance?.totalAbsent || attendanceSummary?.absentDays || 0}
                 </Text>
                 <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Absent</Text>
               </View>
+              {overallAttendance?.attendancePercentage !== undefined && (
+                <View style={styles.statItem}>
+                  <Text style={[styles.statValue, { color: theme.colors.warning, ...theme.typography.h2 }]}>
+                    {overallAttendance.attendancePercentage.toFixed(1)}%
+                  </Text>
+                  <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Percentage</Text>
+                </View>
+              )}
             </View>
           </Card>
         )}

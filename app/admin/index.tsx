@@ -7,7 +7,7 @@ import {
   ScrollView,
   RefreshControl,
 } from 'react-native';
-import { useRouter, Redirect } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { DashboardHeader } from '@/components/DashboardHeader';
@@ -25,26 +25,24 @@ const mockUser = {
   email: 'abhay@example.com',
 };
 
-// Feature cards matching the reference UI
+// Feature cards matching the reference UI - Admin routes
 const featureCards = [
   { title: 'Students', icon: 'person', color: '#5AC8FA', route: '/admin/students' },
   { title: 'Attendance', icon: 'event', color: '#007AFF', route: '/admin/attendance' },
   { title: 'Seats', icon: 'schedule', color: '#FF9500', route: '/admin/seats' },
   { title: 'Fees', icon: 'account-balance-wallet', color: '#34C759', route: '/admin/fees' },
-  { title: 'Inquery', icon: 'comment', color: '#007AFF', route: '/admin/queries' },
-  { title: 'Inactive Students', icon: 'person-off', color: '#007AFF', route: '/admin/attendance' },
+  { title: 'Inquery', icon: 'comment', color: '#007AFF', route: '/queries/submit' },
+  { title: 'Inactive Students', icon: 'person-off', color: '#007AFF', route: '/students/inactive' },
 ];
 
 export default function DashboardScreen() {
+  const { theme } = useTheme();
   const { user, isLoading: authLoading } = useAuth();
+  const router = useRouter();
+  const [refreshing, setRefreshing] = useState(false);
   
-  if (authLoading) {
-    return null;
-  }
-  
-  // Redirect to admin/student route based on role
-  const routePrefix = user?.role === 'admin' ? '/admin' : '/student';
-  return <Redirect href={`${routePrefix}/`} />;
+  // Use auth user or fallback to mock
+  const displayUser = user || mockUser;
 
   // Fetch admin stats if user is admin
   const { data: statsData, isLoading: statsLoading, refetch: refetchStats } = useGetAdminStatsQuery(

@@ -9,10 +9,14 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
 import { Input } from '@/components/Input';
+import { LoadingSpinner } from '@/components/LoadingSpinner';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { useSaveLayoutJsonMutation } from '@/services/api/seatLayoutApi';
+import { Alert } from 'react-native';
 
 // Mock seat grid
 const generateSeatGrid = (rows: number, cols: number) => {
@@ -32,12 +36,14 @@ const generateSeatGrid = (rows: number, cols: number) => {
 
 export default function SeatLayoutEditorScreen() {
   const { theme } = useTheme();
+  const { user } = useAuth();
   const router = useRouter();
   const [rows, setRows] = useState(5);
   const [cols, setCols] = useState(8);
   const [seats, setSeats] = useState(generateSeatGrid(5, 8));
   const [selectedSeat, setSelectedSeat] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState(false);
+  const [saveLayoutJson, { isLoading: saving }] = useSaveLayoutJsonMutation();
 
   const handleSeatPress = (seatId: string) => {
     if (previewMode) return;
@@ -48,9 +54,37 @@ export default function SeatLayoutEditorScreen() {
     setSeats(generateSeatGrid(rows, cols));
   };
 
-  const handleSave = () => {
-    // TODO: Save layout
-    router.back();
+  const handleSave = async () => {
+    if (!user?._id && !user?.id || !user?.libraryId) {
+      Alert.alert('Error', 'User information is missing');
+      return;
+    }
+
+    try {
+      // Convert seats array to layout JSON format
+      const layoutData = {
+        rows,
+        cols,
+        seats: seats.map((seat) => ({
+          id: seat.id,
+          row: seat.row,
+          col: seat.col,
+          status: seat.status,
+        })),
+      };
+
+      await saveLayoutJson({
+        libraryId: user.libraryId,
+        adminId: user._id || user.id || '',
+        layoutData,
+      }).unwrap();
+
+      Alert.alert('Success', 'Layout saved successfully', [
+        { text: 'OK', onPress: () => router.back() },
+      ]);
+    } catch (error: any) {
+      Alert.alert('Error', error?.data?.message || 'Failed to save layout');
+    }
   };
 
   const renderSeat = ({ item }: { item: typeof seats[0] }) => {
@@ -156,12 +190,17 @@ export default function SeatLayoutEditorScreen() {
 
       {!previewMode && (
         <View style={[styles.footer, { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.border }]}>
-          <Button
-            title="Save Layout"
-            onPress={handleSave}
-            variant="primary"
-            style={styles.saveButton}
-          />
+          {saving ? (
+            <LoadingSpinner />
+          ) : (
+            <Button
+              title="Save Layout"
+              onPress={handleSave}
+              variant="primary"
+              loading={saving}
+              style={styles.saveButton}
+            />
+          )}
         </View>
       )}
     </View>

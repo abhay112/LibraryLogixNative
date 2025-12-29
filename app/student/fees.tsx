@@ -10,7 +10,8 @@ import {
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { ScreenWrapper } from '@/components/ScreenWrapper';
+import { DashboardHeader } from '@/components/DashboardHeader';
+import { formatRole } from '@/utils/format';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
 import { Badge } from '@/components/Badge';
@@ -18,18 +19,13 @@ import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { EmptyState } from '@/components/EmptyState';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { format } from 'date-fns';
-import {
-  useGetFeesQuery,
-  useGetUpcomingFeesDueQuery,
-  useApplyRoundFigureFeesMutation,
-} from '@/services/api/feesApi';
+import { useGetFeesQuery, Fee } from '@/services/api/feesApi';
 
 export default function FeesScreen() {
   const { theme } = useTheme();
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const router = useRouter();
   const [filter, setFilter] = useState<'all' | 'pending' | 'paid' | 'overdue' | 'due_soon'>('all');
-  const [viewMode, setViewMode] = useState<'all' | 'upcoming'>('all');
 
   // Fetch fees using RTK Query
   const {
@@ -46,53 +42,54 @@ export default function FeesScreen() {
       limit: 50,
     },
     { 
-      skip: (!user?._id && !user?.id) || !user?.libraryId || viewMode === 'upcoming',
-      // Enable refetch on mount to ensure API is called
+      skip: (!user?._id && !user?.id) || !user?.libraryId || authLoading,
       refetchOnMountOrArgChange: true,
     }
   );
 
-  // Fetch upcoming fees due
-  const {
-    data: upcomingFeesData,
-    isLoading: upcomingLoading,
-    refetch: refetchUpcoming,
-  } = useGetUpcomingFeesDueQuery(
-    {
-      adminId: user?._id || user?.id || '',
-      libraryId: user?.libraryId || '',
-      days: 7,
-      page: 1,
-      limit: 50,
-    },
-    { skip: (!user?._id && !user?.id) || !user?.libraryId || viewMode !== 'upcoming' }
-  );
-
-  const [applyRoundFigure] = useApplyRoundFigureFeesMutation();
-
-  const fees = viewMode === 'upcoming' ? (upcomingFeesData?.data || []) : (feesData?.data || []);
+  const fees = feesData?.data || [];
   
-  const filteredFees = fees.filter((fee) => {
+  // Filter fees by current student
+  const studentFees = fees.filter((fee) => fee.studentId === (user?._id || user?.id));
+  
+  const filteredFees = studentFees.filter((fee) => {
     if (filter === 'all') return true;
     return fee.status === filter;
   });
 
+  // Calculate total pending amount from fees array
   const totalPending = filteredFees
     .filter((fee) => fee.status === 'pending' || fee.status === 'overdue' || fee.status === 'due_soon')
-    .reduce((sum, fee) => sum + (fee.amount || 0), 0);
+    .reduce((sum, fee) => {
+      const feeAmount = fee.fees?.reduce((feeSum, f) => feeSum + (f.amount || 0), 0) || 0;
+      return sum + feeAmount;
+    }, 0);
 
-  const renderFeeItem = ({ item }: { item: any }) => {
-    const isOverdue = item.status === 'overdue' && item.dueDate && new Date(item.dueDate) < new Date();
+  const renderFeeItem = ({ item }: { item: Fee }) => {
+    // Calculate total amount from fees array
+    const totalAmount = item.fees?.reduce((sum, f) => sum + (f.amount || 0), 0) || 0;
+    
+    // Determine status and variant
+    const isOverdue = item.isOverdue || (item.status === 'overdue');
     const statusVariant =
       item.status === 'paid'
         ? 'success'
-        : item.status === 'overdue' || isOverdue
+        : isOverdue
         ? 'error'
-        : 'warning';
+        : item.status === 'due_soon'
+        ? 'warning'
+        : 'info';
 
-    // Get fee type from fees array or use default
-    const feeType = item.fees?.[0]?.type || 'Library Fee';
-    const amount = item.amount || item.fees?.[0]?.amount || 0;
+    // Format shift name
+    const shift = item.fees?.[0]?.shift || 'N/A';
+    const shiftDisplay = shift.split('_').map(word => 
+      word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+    ).join(' ');
+
+    // Format dates
+    const dueDate = item.feesDueDate ? format(new Date(item.feesDueDate), 'MMM dd, yyyy') : null;
+    const submissionDate = item.feesSubmissionDate ? format(new Date(item.feesSubmissionDate), 'MMM dd, yyyy') : null;
+    const nextDueDate = item.nextDueDate ? format(new Date(item.nextDueDate), 'MMM dd, yyyy') : null;
 
     return (
       <TouchableOpacity
@@ -102,22 +99,41 @@ export default function FeesScreen() {
         <Card style={styles.feeCard}>
           <View style={styles.feeHeader}>
             <View style={styles.feeInfo}>
-              <Text style={[styles.feeType, { color: theme.colors.textPrimary, ...theme.typography.bodyLarge }]}>
-                {feeType}
-              </Text>
-              {item.dueDate && (
+              <View style={styles.feeMeta}>
+                <Icon name="schedule" size={14} color={theme.colors.textSecondary} />
+                <Text style={[styles.feeDate, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
+                  Shift: {shiftDisplay}
+                </Text>
+              </View>
+              {dueDate && (
                 <View style={styles.feeMeta}>
                   <Icon name="calendar-today" size={14} color={theme.colors.textSecondary} />
                   <Text style={[styles.feeDate, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-                    Due: {format(new Date(item.dueDate), 'MMM dd, yyyy')}
+                    Due: {dueDate}
                   </Text>
                 </View>
               )}
-              {item.paidDate && (
+              {submissionDate && item.status === 'paid' && (
                 <View style={styles.feeMeta}>
                   <Icon name="check-circle" size={14} color={theme.colors.success} />
                   <Text style={[styles.feeDate, { color: theme.colors.success, ...theme.typography.caption }]}>
-                    Paid: {format(new Date(item.paidDate), 'MMM dd, yyyy')}
+                    Paid: {submissionDate}
+                  </Text>
+                </View>
+              )}
+              {isOverdue && item.daysOverdue && (
+                <View style={styles.feeMeta}>
+                  <Icon name="warning" size={14} color={theme.colors.error} />
+                  <Text style={[styles.feeDate, { color: theme.colors.error, ...theme.typography.caption }]}>
+                    {item.daysOverdue} days overdue
+                  </Text>
+                </View>
+              )}
+              {item.remainingDays !== undefined && item.remainingDays > 0 && !isOverdue && (
+                <View style={styles.feeMeta}>
+                  <Icon name="timer" size={14} color={theme.colors.warning} />
+                  <Text style={[styles.feeDate, { color: theme.colors.warning, ...theme.typography.caption }]}>
+                    {item.remainingDays} days remaining
                   </Text>
                 </View>
               )}
@@ -128,9 +144,16 @@ export default function FeesScreen() {
             />
           </View>
           <View style={styles.feeAmountRow}>
-            <Text style={[styles.feeAmount, { color: theme.colors.textPrimary, ...theme.typography.h2 }]}>
-              ${amount.toFixed(2)}
-            </Text>
+            <View>
+              <Text style={[styles.feeAmount, { color: theme.colors.textPrimary, ...theme.typography.h2 }]}>
+                ₹{totalAmount.toFixed(2)}
+              </Text>
+              {item.fees && item.fees.length > 0 && (
+                <Text style={[styles.feeBreakdown, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
+                  {item.fees.length} payment{item.fees.length > 1 ? 's' : ''}
+                </Text>
+              )}
+            </View>
             {item.status !== 'paid' && (
               <Button
                 title="Pay Now"
@@ -140,10 +163,13 @@ export default function FeesScreen() {
               />
             )}
           </View>
-          {item.paymentMethod && (
-            <Text style={[styles.paymentMethod, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-              Paid via {item.paymentMethod}
-            </Text>
+          {nextDueDate && item.status === 'paid' && (
+            <View style={styles.nextDueContainer}>
+              <Icon name="event" size={14} color={theme.colors.textSecondary} />
+              <Text style={[styles.nextDueText, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
+                Next due: {nextDueDate}
+              </Text>
+            </View>
           )}
         </Card>
       </TouchableOpacity>
@@ -151,39 +177,24 @@ export default function FeesScreen() {
   };
 
   return (
-    <ScreenWrapper>
-      <View style={[styles.content, { backgroundColor: theme.colors.background }]}>
-        <View style={[styles.header, { borderBottomColor: theme.colors.border }]}>
-          <Text style={[styles.headerTitle, { color: theme.colors.textPrimary, ...theme.typography.h2 }]}>
-            Fees & Payments
-          </Text>
-          <View style={styles.headerActions}>
-            <TouchableOpacity
-              onPress={() => setViewMode(viewMode === 'all' ? 'upcoming' : 'all')}
-              style={styles.viewModeButton}
-            >
-              <Icon
-                name={viewMode === 'all' ? 'schedule' : 'list'}
-                size={24}
-                color={theme.colors.primary}
-              />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => router.push('/fees/history')}>
-              <Icon name="history" size={24} color={theme.colors.textPrimary} />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {viewMode === 'upcoming' && (
-          <Card style={styles.infoCard}>
-            <View style={styles.infoRow}>
-              <Icon name="info" size={20} color={theme.colors.info} />
-              <Text style={[styles.infoText, { color: theme.colors.textSecondary }]}>
-                Showing fees due in the next 7 days
-              </Text>
-            </View>
-          </Card>
-        )}
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      {user && (
+        <DashboardHeader
+          userName={user.name}
+          userRole={formatRole(user.role)}
+          notificationCount={3}
+          onNotificationPress={() => router.push('/notifications')}
+          onProfilePress={() => router.push('/(tabs)/profile')}
+        />
+      )}
+      <View style={[styles.header, { borderBottomColor: theme.colors.border }]}>
+        <Text style={[styles.headerTitle, { color: theme.colors.textPrimary, ...theme.typography.h2 }]}>
+          Fees & Payments
+        </Text>
+        <TouchableOpacity onPress={() => router.push('/fees/history')}>
+          <Icon name="history" size={24} color={theme.colors.textPrimary} />
+        </TouchableOpacity>
+      </View>
 
       <ScrollView style={styles.content}>
         {totalPending > 0 && (
@@ -194,7 +205,7 @@ export default function FeesScreen() {
                   Total Pending
                 </Text>
                 <Text style={[styles.totalAmount, { color: theme.colors.warning, ...theme.typography.h1 }]}>
-                  ${totalPending.toFixed(2)}
+                  ₹{totalPending.toFixed(2)}
                 </Text>
               </View>
               <View style={[styles.totalIcon, { backgroundColor: theme.colors.warning + '20' }]}>
@@ -238,40 +249,38 @@ export default function FeesScreen() {
           ))}
         </View>
 
-        {(viewMode === 'all' ? feesLoading : upcomingLoading) ? (
+        {feesLoading ? (
           <LoadingSpinner />
-        ) : (viewMode === 'all' ? feesError : false) ? (
+        ) : feesError ? (
           <EmptyState
             icon="error-outline"
             title="Error loading fees"
             message="Please try again later"
           />
         ) : (
-          <FlatList
-            data={filteredFees}
-            renderItem={renderFeeItem}
-            keyExtractor={(item) => item._id}
-            scrollEnabled={false}
-            contentContainerStyle={styles.list}
-            onRefresh={viewMode === 'all' ? refetchFees : refetchUpcoming}
-            refreshing={false}
-            ListEmptyComponent={
-              <EmptyState
-                icon="payment"
-                title="No fees found"
-                message="No fees match your current filter"
-              />
-            }
-          />
+          <View style={styles.list}>
+            <FlatList
+              data={filteredFees}
+              renderItem={renderFeeItem}
+              keyExtractor={(item) => item._id}
+              scrollEnabled={false}
+              ListEmptyComponent={
+                <EmptyState
+                  icon="payment"
+                  title="No fees found"
+                  message="No fees match your current filter"
+                />
+              }
+            />
+          </View>
         )}
       </ScrollView>
-      </View>
-    </ScreenWrapper>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  content: {
+  container: {
     flex: 1,
   },
   header: {
@@ -285,26 +294,8 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontWeight: '700',
   },
-  headerActions: {
-    flexDirection: 'row',
-    gap: 12,
-    alignItems: 'center',
-  },
-  viewModeButton: {
-    padding: 4,
-  },
-  infoCard: {
-    margin: 16,
-    marginBottom: 0,
-    padding: 12,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  infoText: {
-    fontSize: 14,
+  content: {
+    flex: 1,
   },
   totalCard: {
     margin: 16,
@@ -372,6 +363,21 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     fontWeight: '600',
   },
+  feeBreakdown: {
+    marginTop: 4,
+  },
+  nextDueContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0',
+  },
+  nextDueText: {
+    marginLeft: 4,
+  },
   feeMeta: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -392,15 +398,6 @@ const styles = StyleSheet.create({
   },
   paymentMethod: {
     marginTop: 8,
-  },
-  empty: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 64,
-  },
-  emptyText: {
-    marginTop: 16,
   },
 });
 

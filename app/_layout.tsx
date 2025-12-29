@@ -48,7 +48,7 @@ function GlobalSideMenu() {
 
 function RootLayoutNav() {
   const { theme, colorScheme } = useTheme();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
 
   return (
     <>
@@ -60,13 +60,43 @@ function RootLayoutNav() {
             backgroundColor: theme.colors.background,
           },
         }}
+        initialRouteName={isAuthenticated ? (user?.role === 'admin' ? 'admin' : 'student') : '(auth)'}
       >
+        <Stack.Screen name="index" />
         <Stack.Screen name="(auth)" />
         <Stack.Screen 
           name="(tabs)" 
           options={{
             // Only accessible when authenticated
             gestureEnabled: isAuthenticated,
+          }}
+        />
+        <Stack.Screen 
+          name="(admin)" 
+          options={{
+            // Only accessible when authenticated as admin
+            gestureEnabled: isAuthenticated && user?.role === 'admin',
+          }}
+        />
+        <Stack.Screen 
+          name="(user)" 
+          options={{
+            // Only accessible when authenticated as user
+            gestureEnabled: isAuthenticated && user?.role !== 'admin',
+          }}
+        />
+        <Stack.Screen 
+          name="admin" 
+          options={{
+            // Only accessible when authenticated as admin
+            gestureEnabled: isAuthenticated && user?.role === 'admin',
+          }}
+        />
+        <Stack.Screen 
+          name="student" 
+          options={{
+            // Only accessible when authenticated as student
+            gestureEnabled: isAuthenticated && user?.role !== 'admin',
           }}
         />
       </Stack>

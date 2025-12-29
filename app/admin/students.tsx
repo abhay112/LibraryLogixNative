@@ -7,8 +7,9 @@ import {
   TouchableOpacity,
   FlatList,
   TextInput,
+  RefreshControl,
 } from 'react-native';
-import { useRouter, Redirect } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { DashboardHeader } from '@/components/DashboardHeader';
@@ -24,17 +25,26 @@ import { useGetStudentsQuery } from '@/services/api/studentsApi';
 
 
 export default function StudentsScreen() {
+  const { theme } = useTheme();
   const { user, isLoading: authLoading } = useAuth();
-  
-  if (authLoading) {
-    return null;
-  }
-  
-  // Redirect to admin/student route based on role
-  const routePrefix = user?.role === 'admin' ? '/admin' : '/student';
-  return <Redirect href={`${routePrefix}/students`} />;
+  const router = useRouter();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState(1);
 
-  // Fetch students using RTK Query
+  // Debug: Log user data to verify libraryId is set
+  React.useEffect(() => {
+    if (user) {
+      console.log('📚 Students Page - User Data:', {
+        userId: user._id || user.id,
+        libraryId: user.libraryId,
+        role: user.role,
+        hasLibraryId: !!user.libraryId,
+        willCallAPI: !((!user?._id && !user?.id) || !user?.libraryId || authLoading || user?.role !== 'admin'),
+      });
+    }
+  }, [user, authLoading]);
+
+  // Fetch students using RTK Query - Show all students for admin
   const {
     data: studentsData,
     isLoading: studentsLoading,
@@ -46,16 +56,17 @@ export default function StudentsScreen() {
       libraryId: user?.libraryId || '',
       name: searchQuery || undefined,
       page,
-      limit: 20,
+      limit: 100, // Increased limit to show more students
     },
     { 
-      skip: (!user?._id && !user?.id) || !user?.libraryId || authLoading,
+      // Skip if missing required fields: adminId and libraryId are both required
+      skip: (!user?._id && !user?.id) || !user?.libraryId || authLoading || user?.role !== 'admin',
       refetchOnMountOrArgChange: true,
     }
   );
 
   const students = studentsData?.data || [];
-  const isLoading = studentsLoading;
+  const isLoading = studentsLoading || authLoading;
 
   const getInitials = (name: string) => {
     return name
@@ -66,38 +77,60 @@ export default function StudentsScreen() {
       .slice(0, 2);
   };
 
-  const renderStudentItem = ({ item }: { item: any }) => (
-    <TouchableOpacity
-      onPress={() => router.push(`/students/${item._id}`)}
-      activeOpacity={0.7}
-    >
-      <Card style={styles.studentCard}>
-        <View style={styles.studentRow}>
-          <View style={[styles.avatar, { backgroundColor: theme.colors.primary + '20' }]}>
-            <Text style={[styles.avatarText, { color: theme.colors.primary }]}>
-              {getInitials(item.name)}
-            </Text>
-          </View>
-          <View style={styles.studentInfo}>
-            <Text style={[styles.studentName, { color: theme.colors.textPrimary, ...theme.typography.bodyLarge }]}>
-              {item.name}
-            </Text>
-            <Text style={[styles.studentEmail, { color: theme.colors.textSecondary, ...theme.typography.body }]}>
-              {item.email}
-            </Text>
-            {item.mobile && (
-              <Text style={[styles.studentMobile, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-                {item.mobile}
+  const renderStudentItem = ({ item }: { item: any }) => {
+    const isActive = item.active !== false;
+    const isBlocked = item.blocked === true;
+    const isPaused = item.isPaused === true;
+    
+    return (
+      <TouchableOpacity
+        onPress={() => router.push(`/students/${item._id}`)}
+        activeOpacity={0.7}
+      >
+        <Card style={styles.studentCard}>
+          <View style={styles.studentRow}>
+            <View style={[styles.avatar, { backgroundColor: theme.colors.primary + '20' }]}>
+              <Text style={[styles.avatarText, { color: theme.colors.primary }]}>
+                {getInitials(item.name)}
               </Text>
-            )}
+            </View>
+            <View style={styles.studentInfo}>
+              <View style={styles.studentNameRow}>
+                <Text style={[styles.studentName, { color: theme.colors.textPrimary, ...theme.typography.bodyLarge }]}>
+                  {item.name}
+                </Text>
+                {isBlocked && (
+                  <Badge label="Blocked" variant="error" size="small" />
+                )}
+                {isPaused && (
+                  <Badge label="Paused" variant="warning" size="small" />
+                )}
+                {!isActive && !isBlocked && !isPaused && (
+                  <Badge label="Inactive" variant="info" size="small" />
+                )}
+              </View>
+              <Text style={[styles.studentEmail, { color: theme.colors.textSecondary, ...theme.typography.body }]}>
+                {item.email}
+              </Text>
+              {item.mobile && (
+                <Text style={[styles.studentMobile, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
+                  {item.mobile}
+                </Text>
+              )}
+              {item.shift && (
+                <Text style={[styles.studentShift, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
+                  Shift: {item.shift}
+                </Text>
+              )}
+            </View>
+            <TouchableOpacity>
+              <Icon name="chevron-right" size={20} color={theme.colors.textSecondary} />
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity>
-            <Icon name="more-vert" size={20} color={theme.colors.textSecondary} />
-          </TouchableOpacity>
-        </View>
-      </Card>
-    </TouchableOpacity>
-  );
+        </Card>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -138,7 +171,16 @@ export default function StudentsScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content}>
+      <ScrollView 
+        style={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={studentsLoading}
+            onRefresh={refetchStudents}
+          />
+        }
+      >
+        {/* Statistics Card */}
         <Card style={styles.statsCard}>
           <Text style={[styles.statsTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
             Statistics
@@ -146,67 +188,71 @@ export default function StudentsScreen() {
           <View style={styles.statsRow}>
             <View style={styles.statBox}>
               <Text style={[styles.statNumber, { color: theme.colors.primary, ...theme.typography.h2 }]}>
-                25
+                {students.length}
               </Text>
               <Text style={[styles.statLabel, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-                Total Days
+                Total Students
               </Text>
             </View>
             <View style={styles.statBox}>
               <Text style={[styles.statNumber, { color: theme.colors.success, ...theme.typography.h2 }]}>
-                23
+                {students.filter(s => s.active !== false).length}
               </Text>
               <Text style={[styles.statLabel, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-                Present
+                Active
               </Text>
             </View>
             <View style={styles.statBox}>
               <Text style={[styles.statNumber, { color: theme.colors.error, ...theme.typography.h2 }]}>
-                2
+                {students.filter(s => s.blocked === true).length}
               </Text>
               <Text style={[styles.statLabel, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-                Absent
+                Blocked
               </Text>
             </View>
             <View style={styles.statBox}>
-              <Text style={[styles.statNumber, { color: theme.colors.info, ...theme.typography.h2 }]}>
-                92%
+              <Text style={[styles.statNumber, { color: theme.colors.warning, ...theme.typography.h2 }]}>
+                {students.filter(s => s.isPaused === true).length}
               </Text>
               <Text style={[styles.statLabel, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-                Percentage
+                Paused
               </Text>
             </View>
           </View>
         </Card>
 
-      {isLoading ? (
-        <LoadingSpinner />
-      ) : studentsError ? (
-        <EmptyState
-          icon="error-outline"
-          title="Error loading students"
-          message="Please try again later"
-        />
-      ) : (
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
-            Students
-          </Text>
-          <FlatList
-            data={students}
-            renderItem={renderStudentItem}
-            keyExtractor={(item) => item._id}
-            scrollEnabled={false}
-            ListEmptyComponent={
+        {/* Students List */}
+        {studentsLoading ? (
+          <LoadingSpinner />
+        ) : studentsError ? (
+          <EmptyState
+            icon="error-outline"
+            title="Error loading students"
+            message="Please try again later"
+          />
+        ) : (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
+                All Students ({students.length})
+              </Text>
+            </View>
+            {students.length > 0 ? (
+              <FlatList
+                data={students}
+                renderItem={renderStudentItem}
+                keyExtractor={(item) => item._id}
+                scrollEnabled={false}
+              />
+            ) : (
               <EmptyState
                 icon="people-outline"
                 title="No students found"
                 message="Add your first student to get started"
               />
-            }
-          />
-        </View>
-      )}
+            )}
+          </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -282,8 +328,21 @@ const styles = StyleSheet.create({
   section: {
     padding: 16,
   },
-  sectionTitle: {
+  sectionHeader: {
     marginBottom: 16,
+  },
+  sectionTitle: {
+    fontWeight: '700',
+  },
+  studentNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+    flexWrap: 'wrap',
+  },
+  studentShift: {
+    marginTop: 4,
   },
   studentCard: {
     marginBottom: 12,

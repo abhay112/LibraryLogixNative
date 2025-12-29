@@ -10,27 +10,68 @@ export interface AttendanceRecord {
   date?: string;
 }
 
+export interface AttendanceRecordWithStudent {
+  _id: string;
+  attendanceId: string;
+  studentId: string | {
+    _id: string;
+    name: string;
+    email: string;
+    mobile: string;
+  };
+  adminId: string;
+  libraryId: string;
+  date: string;
+  shift: 'MORNING' | 'AFTERNOON' | 'EVENING' | 'FULL_DAY';
+  checkInTime?: string | null;
+  checkOutTime?: string | null;
+  totalHours?: number;
+  status: 'PRESENT' | 'ABSENT' | 'LATE' | 'EARLY_LEAVE';
+  deleted: boolean;
+  createdAt: string;
+  updatedAt: string;
+  seatId?: string | null;
+  seatAssignmentId?: string | null;
+  seatNumber?: number | null;
+}
+
 export interface AttendanceResponse {
   message: string;
   data: {
     attendance: {
       _id: string;
       date: string;
+      adminId: string;
+      libraryId: string;
+      seatLayoutId: string;
+      attendanceRecords: AttendanceRecordWithStudent[];
       totalPresent: number;
+      totalAbsent: number;
       morningPresent: number;
       afternoonPresent: number;
       eveningPresent: number;
       fullDayPresent: number;
+      deleted: boolean;
+      createdAt: string;
+      updatedAt: string;
     };
     seatLayout: {
       _id: string;
+      libraryId: string;
+      adminId: string;
       rows: number;
       columns: number;
       totalSeats: number;
       availableSeats: number;
+      fixedSeats: number;
+      blockedSeats: number;
+      isActive: boolean;
+      deleted: boolean;
+      createdAt: string;
+      updatedAt: string;
     };
     seats: any[];
-    attendanceRecords: AttendanceRecord[];
+    attendanceRecords: AttendanceRecordWithStudent[];
   };
 }
 
@@ -137,6 +178,69 @@ export interface AttendanceByShiftResponse {
   };
 }
 
+export interface AttendanceRecordDetail {
+  _id: string;
+  attendanceId: string;
+  studentId: {
+    _id: string;
+    name: string;
+    email: string;
+    mobile: string;
+  };
+  seatId?: string | null;
+  seatAssignmentId?: string | null;
+  adminId: string;
+  libraryId: string;
+  date: string;
+  shift: 'MORNING' | 'AFTERNOON' | 'EVENING' | 'FULL_DAY';
+  checkInTime?: string | null;
+  checkOutTime?: string | null;
+  totalHours?: number;
+  status: 'PRESENT' | 'ABSENT' | 'LATE' | 'EARLY_LEAVE';
+  remark?: string | null;
+  seatNumber?: number | null;
+  deleted: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AttendanceDayRecord {
+  _id: string;
+  date: string;
+  adminId: string;
+  libraryId: {
+    _id: string;
+    name: string;
+    address: string;
+  };
+  seatLayoutId: {
+    _id: string;
+    name: string;
+    rows: number;
+    columns: number;
+    totalSeats: number;
+  };
+  attendanceRecords: AttendanceRecordDetail[];
+  totalPresent: number;
+  totalAbsent: number;
+  morningPresent: number;
+  afternoonPresent: number;
+  eveningPresent: number;
+  fullDayPresent: number;
+  deleted: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AllAttendanceResponse {
+  success: boolean;
+  message: string;
+  data: {
+    attendanceRecords: AttendanceDayRecord[];
+    latestDate: string;
+  };
+}
+
 export const attendanceApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
     // Create attendance record
@@ -150,8 +254,11 @@ export const attendanceApi = baseApi.injectEndpoints({
     }),
 
     // Get attendance by date
-    getAttendanceByDate: builder.query<AttendanceResponse, { date: string; adminId: string }>({
-      query: ({ date, adminId }) => API_ENDPOINTS.ATTENDANCE.BY_DATE(date, adminId),
+    getAttendanceByDate: builder.query<AttendanceResponse, { date: string; adminId: string; libraryId?: string }>({
+      query: ({ date, adminId, libraryId }) => {
+        const url = API_ENDPOINTS.ATTENDANCE.BY_DATE(date, adminId);
+        return libraryId ? `${url}?libraryId=${encodeURIComponent(libraryId)}` : url;
+      },
       providesTags: ['Attendance'],
     }),
 
@@ -227,12 +334,19 @@ export const attendanceApi = baseApi.injectEndpoints({
       }),
       providesTags: ['Attendance'],
     }),
+
+    // Get all attendance records
+    getAllAttendance: builder.query<AllAttendanceResponse, string>({
+      query: (adminId) => API_ENDPOINTS.ATTENDANCE.ALL(adminId),
+      providesTags: ['Attendance'],
+    }),
   }),
 });
 
 export const {
   useCreateAttendanceMutation,
   useGetAttendanceByDateQuery,
+  useGetAllAttendanceQuery,
   useAssignSeatMutation,
   useMarkSeatVacantMutation,
   useGetStudentAttendanceByDateQuery,

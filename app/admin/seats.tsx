@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   FlatList,
 } from 'react-native';
-import { useRouter, Redirect } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { DashboardHeader } from '@/components/DashboardHeader';
@@ -22,15 +22,9 @@ import {
 } from '@/services/api/seatLayoutApi';
 
 export default function SeatsScreen() {
+  const { theme } = useTheme();
   const { user, isLoading: authLoading } = useAuth();
-  
-  if (authLoading) {
-    return null;
-  }
-  
-  // Redirect to admin/student route based on role
-  const routePrefix = user?.role === 'admin' ? '/admin' : '/student';
-  return <Redirect href={`${routePrefix}/seats`} />;
+  const router = useRouter();
 
   // Fetch seat layout
   const {
@@ -49,8 +43,22 @@ export default function SeatsScreen() {
     }
   );
 
-  // Handle different response structures
-  const seats = seatLayoutData?.seats || seatLayoutData?.data?.seats || [];
+  // Extract seat layout data from response
+  const seatLayout = seatLayoutData?.seatLayout;
+  const seats = seatLayoutData?.seats || [];
+  
+  // Debug: Log seat layout data
+  React.useEffect(() => {
+    if (seatLayoutData) {
+      console.log('🪑 Seat Layout Data:', {
+        hasSeatLayout: !!seatLayout,
+        hasSeats: !!seats,
+        seatsCount: seats.length,
+        seatLayout: seatLayout,
+        fullResponse: seatLayoutData,
+      });
+    }
+  }, [seatLayoutData, seatLayout, seats]);
 
   const getSeatColor = (status: string) => {
     switch (status) {
@@ -149,6 +157,57 @@ export default function SeatsScreen() {
       </View>
 
       <ScrollView style={styles.content}>
+        {/* Seat Layout Info Card */}
+        {seatLayout && (
+          <Card style={styles.infoCard}>
+            <Text style={[styles.infoTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
+              Seat Layout Information
+            </Text>
+            <View style={styles.infoGrid}>
+              <View style={styles.infoItem}>
+                <Text style={[styles.infoLabel, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
+                  Total Seats
+                </Text>
+                <Text style={[styles.infoValue, { color: theme.colors.textPrimary, ...theme.typography.h2 }]}>
+                  {seatLayout.totalSeats || 0}
+                </Text>
+              </View>
+              <View style={styles.infoItem}>
+                <Text style={[styles.infoLabel, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
+                  Available
+                </Text>
+                <Text style={[styles.infoValue, { color: theme.colors.success, ...theme.typography.h2 }]}>
+                  {seatLayout.availableSeats || 0}
+                </Text>
+              </View>
+              <View style={styles.infoItem}>
+                <Text style={[styles.infoLabel, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
+                  Fixed
+                </Text>
+                <Text style={[styles.infoValue, { color: theme.colors.warning, ...theme.typography.h2 }]}>
+                  {seatLayout.fixedSeats || 0}
+                </Text>
+              </View>
+              <View style={styles.infoItem}>
+                <Text style={[styles.infoLabel, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
+                  Blocked
+                </Text>
+                <Text style={[styles.infoValue, { color: theme.colors.error, ...theme.typography.h2 }]}>
+                  {seatLayout.blockedSeats || 0}
+                </Text>
+              </View>
+              <View style={styles.infoItem}>
+                <Text style={[styles.infoLabel, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
+                  Layout Size
+                </Text>
+                <Text style={[styles.infoValue, { color: theme.colors.textPrimary, ...theme.typography.body }]}>
+                  {seatLayout.rows || 0} × {seatLayout.columns || 0}
+                </Text>
+              </View>
+            </View>
+          </Card>
+        )}
+
         <View style={styles.legend}>
           <View style={styles.legendItem}>
             <View style={[styles.legendColor, { backgroundColor: theme.colors.success }]} />
@@ -165,13 +224,13 @@ export default function SeatsScreen() {
           <View style={styles.legendItem}>
             <View style={[styles.legendColor, { backgroundColor: theme.colors.warning }]} />
             <Text style={[styles.legendText, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-              Reserved
+              Fixed
             </Text>
           </View>
           <View style={styles.legendItem}>
             <View style={[styles.legendColor, { backgroundColor: theme.colors.textSecondary }]} />
             <Text style={[styles.legendText, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-              Maintenance
+              Blocked
             </Text>
           </View>
         </View>
@@ -184,22 +243,37 @@ export default function SeatsScreen() {
             title="Error loading seats"
             message="Please try again later"
           />
-        ) : (
+        ) : seats.length > 0 ? (
           <View style={styles.seatsList}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
+              Seats ({seats.length})
+            </Text>
             <FlatList
               data={seats}
               renderItem={renderSeatItem}
               keyExtractor={(item) => item._id || item.seatNumber?.toString()}
               scrollEnabled={false}
-              ListEmptyComponent={
-                <EmptyState
-                  icon="event-seat"
-                  title="No seats found"
-                  message="Seat layout not configured"
-                />
-              }
             />
           </View>
+        ) : (
+          <Card style={styles.emptyCard}>
+            <EmptyState
+              icon="event-seat"
+              title="No seats configured"
+              message={seatLayout ? "Seat layout exists but no individual seats have been created yet. Click edit to configure seats." : "Seat layout not configured. Click edit to create a new layout."}
+            />
+            {seatLayout && (
+              <TouchableOpacity
+                style={[styles.createButton, { backgroundColor: theme.colors.primary }]}
+                onPress={() => router.push('/seats/layout')}
+              >
+                <Icon name="add" size={20} color="#FFFFFF" />
+                <Text style={[styles.createButtonText, { color: '#FFFFFF' }]}>
+                  Configure Seats
+                </Text>
+              </TouchableOpacity>
+            )}
+          </Card>
         )}
       </ScrollView>
     </View>
@@ -273,6 +347,55 @@ const styles = StyleSheet.create({
   },
   studentName: {
     marginLeft: 4,
+  },
+  infoCard: {
+    margin: 16,
+    padding: 20,
+  },
+  infoTitle: {
+    marginBottom: 16,
+    fontWeight: '700',
+  },
+  infoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 16,
+  },
+  infoItem: {
+    flex: 1,
+    minWidth: '45%',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+  },
+  infoLabel: {
+    marginBottom: 4,
+  },
+  infoValue: {
+    fontWeight: '700',
+  },
+  sectionTitle: {
+    marginBottom: 16,
+    fontWeight: '700',
+  },
+  emptyCard: {
+    margin: 16,
+    padding: 20,
+    alignItems: 'center',
+  },
+  createButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    marginTop: 16,
+  },
+  createButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   FlatList,
 } from 'react-native';
-import { useRouter, Redirect } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { DashboardHeader } from '@/components/DashboardHeader';
@@ -22,15 +22,9 @@ import {
 } from '@/services/api/seatLayoutApi';
 
 export default function SeatsScreen() {
+  const { theme } = useTheme();
   const { user, isLoading: authLoading } = useAuth();
-  
-  if (authLoading) {
-    return null;
-  }
-  
-  // Redirect to admin/student route based on role
-  const routePrefix = user?.role === 'admin' ? '/admin' : '/student';
-  return <Redirect href={`${routePrefix}/seats`} />;
+  const router = useRouter();
 
   // Fetch seat layout
   const {
