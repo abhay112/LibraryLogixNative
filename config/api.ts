@@ -1,6 +1,21 @@
 // API Configuration
+// For physical iOS/Android devices, use your Mac's local IP address instead of localhost
+// Find your IP with: ifconfig | grep "inet " | grep -v 127.0.0.1
+// Or set EXPO_PUBLIC_API_URL environment variable
+const getDevApiUrl = () => {
+  // Check if custom API URL is set via environment variable
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    return process.env.EXPO_PUBLIC_API_URL;
+  }
+  
+  // Default to local IP for physical devices (works on both simulator and device)
+  // Change this to your Mac's local IP address if needed
+  // For iOS Simulator, localhost works fine, but for physical devices use your Mac's IP
+  return 'http://192.168.1.104:4000/api/v1';
+};
+
 export const API_BASE_URL = __DEV__
-  ? 'http://localhost:4000/api/v1'
+  ? getDevApiUrl()
   : 'https://api.example.com/api/v1';
 
 export const API_TIMEOUT = 30000; // 30 seconds

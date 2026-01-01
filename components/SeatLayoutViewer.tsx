@@ -112,6 +112,12 @@ export const SeatLayoutViewer: React.FC<SeatLayoutViewerProps> = ({
   const [selectedSeatInfo, setSelectedSeatInfo] = useState<Seat | null>(null);
   const [seats, setSeats] = useState<Seat[]>(layoutJson.seats || []);
 
+  // Safety check for theme
+  if (!theme || !theme.colors) {
+    console.warn('Theme not available in SeatLayoutViewer');
+    return null;
+  }
+
   // Sync seats with layoutJson when it changes
   React.useEffect(() => {
     setSeats(layoutJson.seats || []);
@@ -167,6 +173,14 @@ export const SeatLayoutViewer: React.FC<SeatLayoutViewerProps> = ({
     .onEnd(() => {
       savedScale.value = scale.value;
     });
+
+  // Handle seat press function - must be defined before gestures
+  const handleSeatPress = useCallback((seat: Seat) => {
+    setSelectedSeatInfo(seat);
+    if (onSeatPress) {
+      onSeatPress(seat);
+    }
+  }, [onSeatPress]);
 
   // Convert screen coordinates to SVG coordinates
   const screenToSvg = useCallback((screenX: number, screenY: number) => {
@@ -249,13 +263,6 @@ export const SeatLayoutViewer: React.FC<SeatLayoutViewerProps> = ({
       return category?.textColor || '#FFFFFF';
     }
     return '#FFFFFF';
-  };
-
-  const handleSeatPress = (seat: Seat) => {
-    setSelectedSeatInfo(seat);
-    if (onSeatPress) {
-      onSeatPress(seat);
-    }
   };
 
   const resetView = () => {
@@ -632,4 +639,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+
+// Also export as default for compatibility
+export default SeatLayoutViewer;
 

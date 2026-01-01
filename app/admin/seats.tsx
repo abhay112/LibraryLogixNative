@@ -31,6 +31,15 @@ export default function SeatsScreen() {
   const [viewMode, setViewMode] = useState<'list' | 'layout'>('layout');
   const [selectedSeatId, setSelectedSeatId] = useState<string | null>(null);
 
+  // Safety check for theme
+  if (!theme || !theme.colors) {
+    return (
+      <View style={styles.container}>
+        <LoadingSpinner />
+      </View>
+    );
+  }
+
   // Fetch seat layout
   const {
     data: seatLayoutData,
