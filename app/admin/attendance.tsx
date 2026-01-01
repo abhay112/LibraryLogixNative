@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -6,9 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   FlatList,
-  Alert,
-  Platform,
-  TextInput,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -16,7 +13,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { DashboardHeader } from '@/components/DashboardHeader';
 import { formatRole } from '@/utils/format';
 import { Card } from '@/components/Card';
-import { Button } from '@/components/Button';
 import { Badge } from '@/components/Badge';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { EmptyState } from '@/components/EmptyState';
@@ -24,10 +20,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { format, subDays, addDays, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isSameMonth, getDay } from 'date-fns';
 import {
   useGetAttendanceByDateQuery,
-  useGetAttendanceByShiftQuery,
   useGetAllAttendanceQuery,
-  useMarkStudentAbsentMutation,
-  useMarkMultipleStudentsAbsentMutation,
 } from '@/services/api/attendanceApi';
 
 export default function AttendanceScreen() {
@@ -38,19 +31,17 @@ export default function AttendanceScreen() {
   const todayStr = format(today, 'yyyy-MM-dd');
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [selectedDateObj, setSelectedDateObj] = useState<Date>(today);
-  const [showDatePicker, setShowDatePicker] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [showAllAttendance, setShowAllAttendance] = useState(false);
-  const [selectedShift, setSelectedShift] = useState<'MORNING' | 'AFTERNOON' | 'EVENING' | 'FULL_DAY' | undefined>(undefined);
-  const [viewMode, setViewMode] = useState<'seats' | 'report'>('seats');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [recordsPerPage, setRecordsPerPage] = useState(10);
 
   // Fetch all attendance records
   const {
     data: allAttendanceData,
     isLoading: isLoadingAllAttendance,
     error: allAttendanceError,
-    refetch: refetchAllAttendance,
   } = useGetAllAttendanceQuery(
     user?._id || user?.id || '',
     { skip: (!user?._id && !user?.id) || !showAllAttendance || authLoading }
@@ -59,27 +50,30 @@ export default function AttendanceScreen() {
   // Extract attendance records from the nested structure
   const attendanceDayRecords = allAttendanceData?.data?.attendanceRecords || [];
   
-  // Flatten all individual attendance records for calendar display
-  const allAttendanceRecords = attendanceDayRecords.flatMap(dayRecord => 
+  // Flatten all individual attendance records for table display
+  const allAttendanceRecords = useMemo(() => {
+    return attendanceDayRecords.flatMap(dayRecord => 
     dayRecord.attendanceRecords.map(record => ({
       ...record,
-      date: dayRecord.date, // Add date from parent record
+        date: dayRecord.date,
+        totalPresent: dayRecord.totalPresent,
+        totalAbsent: dayRecord.totalAbsent,
     }))
   );
-  
-  // Update calendar when all attendance is loaded
-  React.useEffect(() => {
-    if (showAllAttendance && attendanceDayRecords.length > 0) {
-      // Calendar will automatically update with the new data
-    }
-  }, [showAllAttendance, attendanceDayRecords]);
+  }, [attendanceDayRecords]);
+
+  // Pagination for table view
+  const totalRecords = allAttendanceRecords.length;
+  const totalPages = Math.ceil(totalRecords / recordsPerPage);
+  const startIndex = (currentPage - 1) * recordsPerPage;
+  const endIndex = startIndex + recordsPerPage;
+  const paginatedRecords = allAttendanceRecords.slice(startIndex, endIndex);
 
   // Fetch attendance data for selected date
   const {
     data: attendanceData,
     isLoading: attendanceLoading,
     error: attendanceError,
-    refetch: refetchAttendance,
   } = useGetAttendanceByDateQuery(
     {
       date: selectedDate,
@@ -88,39 +82,6 @@ export default function AttendanceScreen() {
     },
     { skip: (!user?._id && !user?.id) || !user?.libraryId || showAllAttendance || authLoading }
   );
-
-  // Fetch attendance by shift
-  const {
-    data: attendanceByShiftData,
-    isLoading: shiftLoading,
-    refetch: refetchShiftAttendance,
-  } = useGetAttendanceByShiftQuery(
-    {
-      adminId: user?._id || user?.id || '',
-      libraryId: user?.libraryId || '',
-      date: selectedDate,
-      shift: selectedShift,
-    },
-    { skip: (!user?._id && !user?.id) || !user?.libraryId || viewMode !== 'report' || showAllAttendance || authLoading }
-  );
-
-
-  const handleDateChange = (text: string) => {
-    // Basic validation for YYYY-MM-DD format
-    if (/^\d{4}-\d{2}-\d{2}$/.test(text) || text === '') {
-      setSelectedDate(text);
-    }
-  };
-
-  const handleShowAllAttendance = () => {
-    setShowAllAttendance(true);
-    // Query will automatically start when showAllAttendance becomes true
-    // No need to manually refetch as the skip condition will change
-  };
-
-  const handleShowDateFilter = () => {
-    setShowAllAttendance(false);
-  };
 
   const handleDateSelect = (date: Date) => {
     setSelectedDateObj(date);
@@ -143,11 +104,11 @@ export default function AttendanceScreen() {
     const daysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
     const startDay = getDay(monthStart);
 
-    // Get attendance dates for highlighting - extract unique dates from records
+    // Get attendance dates for highlighting
     const attendanceDates = Array.from(
       new Set(
         allAttendanceRecords
-          .map(record => record.date || record.attendanceDate || record.createdAt)
+          .map(record => record.date || record.createdAt)
           .filter(Boolean)
           .map(date => {
             try {
@@ -222,91 +183,11 @@ export default function AttendanceScreen() {
     );
   };
 
-  const [markAbsent] = useMarkStudentAbsentMutation();
-  const [markMultipleAbsent] = useMarkMultipleStudentsAbsentMutation();
-  const [selectedStudentsForAbsent, setSelectedStudentsForAbsent] = useState<string[]>([]);
-
-  // Extract data from response - handle both seats array and attendanceRecords
+  // Extract data from response
   const seats = attendanceData?.data?.seats || [];
   const attendance = attendanceData?.data?.attendance;
   const attendanceRecords = attendanceData?.data?.attendanceRecords || [];
   const seatLayout = attendanceData?.data?.seatLayout;
-  const shiftReport = attendanceByShiftData?.data;
-  
-  // Debug: Log attendance data
-  React.useEffect(() => {
-    if (attendanceData) {
-      console.log('📊 Attendance Data:', {
-        hasAttendance: !!attendance,
-        hasSeats: !!seats,
-        seatsCount: seats.length,
-        hasAttendanceRecords: !!attendanceRecords,
-        attendanceRecordsCount: attendanceRecords.length,
-        attendance: attendance,
-        fullResponse: attendanceData,
-      });
-    }
-  }, [attendanceData, attendance, seats, attendanceRecords]);
-
-  const handleMarkAbsent = async (studentId: string, date: string = selectedDate, shift: string = 'FULL_DAY') => {
-    if (!user?._id && !user?.id || !user?.libraryId) {
-      Alert.alert('Error', 'User information is missing');
-      return;
-    }
-
-    try {
-      await markAbsent({
-        studentId,
-        date,
-        shift: shift as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'FULL_DAY',
-        adminId: user._id || user.id || '',
-      }).unwrap();
-      Alert.alert('Success', 'Student marked as absent');
-      refetchAttendance();
-      if (viewMode === 'report') {
-        refetchShiftAttendance();
-      }
-    } catch (error: any) {
-      Alert.alert('Error', error?.data?.message || 'Failed to mark student as absent');
-    }
-  };
-
-  const handleMarkMultipleAbsent = async () => {
-    if (selectedStudentsForAbsent.length === 0) {
-      Alert.alert('Error', 'Please select at least one student');
-      return;
-    }
-
-    if (!user?._id && !user?.id || !user?.libraryId) {
-      Alert.alert('Error', 'User information is missing');
-      return;
-    }
-
-    try {
-      await markMultipleAbsent({
-        studentIds: selectedStudentsForAbsent,
-        date: selectedDate,
-        libraryId: user.libraryId,
-        adminId: user._id || user.id || '',
-      }).unwrap();
-      Alert.alert('Success', `${selectedStudentsForAbsent.length} student(s) marked as absent`);
-      setSelectedStudentsForAbsent([]);
-      refetchAttendance();
-      if (viewMode === 'report') {
-        refetchShiftAttendance();
-      }
-    } catch (error: any) {
-      Alert.alert('Error', error?.data?.message || 'Failed to mark students as absent');
-    }
-  };
-
-  const toggleStudentSelection = (studentId: string) => {
-    setSelectedStudentsForAbsent((prev) =>
-      prev.includes(studentId)
-        ? prev.filter((id) => id !== studentId)
-        : [...prev, studentId]
-    );
-  };
 
   const getSeatColor = (status: string) => {
     switch (status) {
@@ -338,7 +219,6 @@ export default function AttendanceScreen() {
             borderWidth: 2,
           },
         ]}
-        onPress={() => router.push('/attendance/mark')}
         disabled={!isAvailable}
       >
         <Text
@@ -363,6 +243,34 @@ export default function AttendanceScreen() {
     );
   };
 
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'PRESENT':
+        return theme.colors.success;
+      case 'ABSENT':
+        return theme.colors.error;
+      case 'LATE':
+        return theme.colors.warning;
+      case 'EARLY_LEAVE':
+        return theme.colors.info;
+      default:
+        return theme.colors.textSecondary;
+    }
+  };
+
+  const getStatusVariant = (status: string): 'success' | 'error' | 'warning' | 'info' => {
+    switch (status) {
+      case 'PRESENT':
+        return 'success';
+      case 'ABSENT':
+        return 'error';
+      case 'LATE':
+        return 'warning';
+      default:
+        return 'info';
+    }
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       {user && (
@@ -378,52 +286,7 @@ export default function AttendanceScreen() {
         <Text style={[styles.headerTitle, { color: theme.colors.textPrimary, ...theme.typography.h2 }]}>
           Attendance
         </Text>
-        <View style={styles.headerActions}>
-          <TouchableOpacity
-            onPress={() => setViewMode(viewMode === 'seats' ? 'report' : 'seats')}
-            style={styles.viewModeButton}
-          >
-            <Icon
-              name={viewMode === 'seats' ? 'list' : 'event-seat'}
-              size={24}
-              color={theme.colors.primary}
-            />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push('/attendance/mark')}>
-            <Icon name="add-circle" size={28} color={theme.colors.primary} />
-          </TouchableOpacity>
-        </View>
       </View>
-
-      {viewMode === 'report' && (
-        <View style={styles.shiftFilters}>
-          {(['MORNING', 'AFTERNOON', 'EVENING', 'FULL_DAY'] as const).map((shift) => (
-            <TouchableOpacity
-              key={shift}
-              style={[
-                styles.shiftButton,
-                {
-                  backgroundColor: selectedShift === shift ? theme.colors.primary : theme.colors.surface,
-                  borderColor: theme.colors.border,
-                },
-              ]}
-              onPress={() => setSelectedShift(selectedShift === shift ? undefined : shift)}
-            >
-              <Text
-                style={[
-                  styles.shiftButtonText,
-                  {
-                    color: selectedShift === shift ? '#FFFFFF' : theme.colors.textPrimary,
-                    ...theme.typography.body,
-                  },
-                ]}
-              >
-                {shift}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
 
       <ScrollView style={styles.content}>
         <Card style={styles.infoCard}>
@@ -433,10 +296,10 @@ export default function AttendanceScreen() {
             </View>
             <View style={styles.infoContent}>
               <Text style={[styles.infoTitle, { color: theme.colors.textPrimary, ...theme.typography.bodyLarge }]}>
-                {showAllAttendance ? 'All Attendance' : format(new Date(selectedDate), 'EEEE, MMMM dd, yyyy')}
+                {showAllAttendance ? 'All Attendance Records' : format(new Date(selectedDate), 'EEEE, MMMM dd, yyyy')}
               </Text>
               <Text style={[styles.infoText, { color: theme.colors.textSecondary, ...theme.typography.body }]}>
-                {showAllAttendance ? 'Showing all attendance records' : `Selected: ${format(new Date(selectedDate), 'MMM dd, yyyy')}`}
+                {showAllAttendance ? `Showing ${totalRecords} records` : `Selected: ${format(new Date(selectedDate), 'MMM dd, yyyy')}`}
               </Text>
             </View>
           </View>
@@ -455,7 +318,6 @@ export default function AttendanceScreen() {
               ]}
               onPress={() => {
                 setShowCalendar(!showCalendar);
-                setShowDatePicker(false);
                 setShowAllAttendance(false);
               }}
             >
@@ -480,7 +342,11 @@ export default function AttendanceScreen() {
                   borderColor: theme.colors.border,
                 },
               ]}
-              onPress={showAllAttendance ? handleShowDateFilter : handleShowAllAttendance}
+              onPress={() => {
+                setShowAllAttendance(!showAllAttendance);
+                setShowCalendar(false);
+                setCurrentPage(1);
+              }}
             >
               <Icon name="list" size={20} color={showAllAttendance ? '#FFFFFF' : theme.colors.textPrimary} />
               <Text
@@ -505,83 +371,8 @@ export default function AttendanceScreen() {
           </Card>
         )}
 
-        {/* Text Date Picker (Fallback) */}
-        {showDatePicker && Platform.OS === 'android' && (
-          <View style={styles.datePickerContainer}>
-            <Text style={[styles.datePickerLabel, { color: theme.colors.textSecondary }]}>
-              Select Date (YYYY-MM-DD):
-            </Text>
-            <TextInput
-              style={[
-                styles.dateInput,
-                {
-                  backgroundColor: theme.colors.surface,
-                  borderColor: theme.colors.border,
-                  color: theme.colors.textPrimary,
-                },
-              ]}
-              value={selectedDate}
-              onChangeText={(text) => {
-                // Basic validation for YYYY-MM-DD format
-                if (/^\d{4}-\d{2}-\d{2}$/.test(text) || text === '') {
-                  setSelectedDate(text);
-                }
-              }}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={theme.colors.textSecondary}
-            />
-            <Button
-              title="Apply"
-              onPress={() => {
-                if (selectedDate && /^\d{4}-\d{2}-\d{2}$/.test(selectedDate)) {
-                  setShowDatePicker(false);
-                  setShowAllAttendance(false);
-                  setSelectedDateObj(new Date(selectedDate));
-                } else {
-                  Alert.alert('Invalid Date', 'Please enter a valid date in YYYY-MM-DD format');
-                }
-              }}
-              variant="primary"
-              size="small"
-              style={styles.applyDateButton}
-            />
-          </View>
-        )}
-
-        <View style={styles.legend}>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: theme.colors.success }]} />
-            <Text style={[styles.legendText, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-              Available
-            </Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: theme.colors.error }]} />
-            <Text style={[styles.legendText, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-              Occupied
-            </Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: theme.colors.warning }]} />
-            <Text style={[styles.legendText, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-              Fixed
-            </Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: theme.colors.textSecondary }]} />
-            <Text style={[styles.legendText, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-              Blocked
-            </Text>
-          </View>
-        </View>
-
         {showAllAttendance ? (
-          <Card style={styles.allAttendanceCard}>
-            <View style={styles.allAttendanceHeader}>
-              <Text style={[styles.allAttendanceTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
-                All Attendance Records ({attendanceDayRecords.length} days)
-              </Text>
-            </View>
+          <View style={styles.tableContainer}>
             {isLoadingAllAttendance ? (
               <LoadingSpinner />
             ) : allAttendanceError ? (
@@ -590,87 +381,185 @@ export default function AttendanceScreen() {
                 title="Error loading attendance"
                 message="Please try again later"
               />
-            ) : attendanceDayRecords.length > 0 ? (
+            ) : paginatedRecords.length > 0 ? (
+              <>
+                {/* Table Header */}
+                <View style={[styles.tableHeader, { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary }]}>
+                  <Text style={[styles.tableHeaderText, { color: '#FFFFFF', flex: 2 }]}>Student</Text>
+                  <Text style={[styles.tableHeaderText, { color: '#FFFFFF', flex: 1.5 }]}>Date</Text>
+                  <Text style={[styles.tableHeaderText, { color: '#FFFFFF', flex: 1 }]}>Shift</Text>
+                  <Text style={[styles.tableHeaderText, { color: '#FFFFFF', flex: 1 }]}>Status</Text>
+                  <Text style={[styles.tableHeaderText, { color: '#FFFFFF', flex: 1.2 }]}>Time</Text>
+                </View>
+
+                {/* Table Rows */}
               <FlatList
-                data={attendanceDayRecords}
-                renderItem={({ item: dayRecord }) => {
-                  const recordDate = dayRecord.date;
-                  let dateStr = 'N/A';
-                  let formattedDate = 'Date N/A';
-                  
-                  try {
-                    if (recordDate) {
-                      dateStr = typeof recordDate === 'string' ? recordDate : format(new Date(recordDate), 'yyyy-MM-dd');
+                  data={paginatedRecords}
+                  renderItem={({ item, index }) => {
+                    const studentId = typeof item.studentId === 'object' ? item.studentId : null;
+                    const studentName = studentId?.name || 'Unknown Student';
+                    const studentEmail = studentId?.email || '';
+                    const dateStr = item.date || item.createdAt || '';
+                    let formattedDate = 'N/A';
+                    
+                    try {
+                      if (dateStr) {
                       formattedDate = format(new Date(dateStr), 'MMM dd, yyyy');
                     }
                   } catch (err) {
                     console.error('Error parsing date:', err);
                   }
+
+                    const checkInTime = item.checkInTime ? format(new Date(item.checkInTime), 'HH:mm') : '-';
+                    const checkOutTime = item.checkOutTime ? format(new Date(item.checkOutTime), 'HH:mm') : '-';
+                    const timeDisplay = checkInTime !== '-' && checkOutTime !== '-' 
+                      ? `${checkInTime} - ${checkOutTime}`
+                      : checkInTime !== '-' ? checkInTime : '-';
+
+                    const isEvenRow = index % 2 === 0;
                   
                   return (
-                    <Card style={styles.attendanceRecordCard}>
-                      <View style={styles.attendanceRecordRow}>
-                        <View style={styles.attendanceRecordInfo}>
-                          <Text style={[styles.attendanceRecordDate, { color: theme.colors.textPrimary, ...theme.typography.bodyLarge }]}>
-                            {formattedDate}
+                      <View
+                        style={[
+                          styles.tableRow,
+                          {
+                            backgroundColor: isEvenRow ? theme.colors.surface : theme.colors.background,
+                            borderBottomColor: theme.colors.border,
+                          },
+                        ]}
+                      >
+                        <View style={[styles.tableCell, { flex: 2 }]}>
+                          <Text style={[styles.tableCellText, { color: theme.colors.textPrimary, fontWeight: '600' }]} numberOfLines={1}>
+                            {studentName}
                           </Text>
-                          <Text style={[styles.attendanceRecordStatus, { color: theme.colors.textSecondary, ...theme.typography.body }]}>
-                            Present: {dayRecord.totalPresent} | Absent: {dayRecord.totalAbsent}
+                          {studentEmail && (
+                            <Text style={[styles.tableCellSubtext, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+                              {studentEmail}
                           </Text>
-                            <Text style={[styles.attendanceRecordShift, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-                            Morning: {dayRecord.morningPresent} | Afternoon: {dayRecord.afternoonPresent} | Evening: {dayRecord.eveningPresent} | Full Day: {dayRecord.fullDayPresent}
-                            </Text>
-                            <Text style={[styles.attendanceRecordShift, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-                            Total Records: {dayRecord.attendanceRecords.length}
-                            </Text>
-                        </View>
-                        <Badge
-                          label={`${dayRecord.totalPresent}/${dayRecord.totalPresent + dayRecord.totalAbsent}`}
-                          variant={dayRecord.totalAbsent === 0 ? 'success' : 'warning'}
-                        />
-                      </View>
-                      {/* Show individual student records */}
-                      {dayRecord.attendanceRecords.length > 0 && (
-                        <View style={styles.studentRecordsContainer}>
-                          {dayRecord.attendanceRecords.slice(0, 3).map((record) => (
-                            <View key={record._id} style={styles.studentRecordItem}>
-                              <Text style={[styles.studentRecordName, { color: theme.colors.textPrimary, ...theme.typography.caption }]}>
-                                {record.studentId?.name || 'Unknown'} - {record.shift} - {record.status}
-                              </Text>
-                            </View>
-                          ))}
-                          {dayRecord.attendanceRecords.length > 3 && (
-                            <Text style={[styles.moreRecordsText, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-                              +{dayRecord.attendanceRecords.length - 3} more
-                            </Text>
                           )}
                         </View>
-                      )}
-                    </Card>
+                        <View style={[styles.tableCell, { flex: 1.5 }]}>
+                          <Text style={[styles.tableCellText, { color: theme.colors.textPrimary }]} numberOfLines={1}>
+                            {formattedDate}
+                            </Text>
+                        </View>
+                        <View style={[styles.tableCell, { flex: 1 }]}>
+                          <Text style={[styles.tableCellText, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+                            {item.shift || '-'}
+                            </Text>
+                        </View>
+                        <View style={[styles.tableCell, { flex: 1 }]}>
+                        <Badge
+                            label={item.status || 'N/A'}
+                            variant={getStatusVariant(item.status || '')}
+                            size="small"
+                        />
+                      </View>
+                        <View style={[styles.tableCell, { flex: 1.2 }]}>
+                          <Text style={[styles.tableCellText, { color: theme.colors.textSecondary, fontSize: 12 }]} numberOfLines={1}>
+                            {timeDisplay}
+                              </Text>
+                            </View>
+                        </View>
                   );
                 }}
-                keyExtractor={(item) => item._id || item.date}
+                  keyExtractor={(item) => item._id}
                 scrollEnabled={false}
               />
+
+                {/* Pagination Controls */}
+                {totalPages > 1 && (
+                  <View style={[styles.paginationContainer, { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.border }]}>
+                    <View style={styles.paginationInfo}>
+                      <Text style={[styles.paginationText, { color: theme.colors.textSecondary }]}>
+                        Showing {startIndex + 1}-{Math.min(endIndex, totalRecords)} of {totalRecords}
+                      </Text>
+                      <View style={styles.recordsPerPageContainer}>
+                        <Text style={[styles.recordsPerPageLabel, { color: theme.colors.textSecondary }]}>
+                          Per page:
+                        </Text>
+                        <View style={styles.recordsPerPageButtons}>
+                          {[10, 20, 50].map((limit) => (
+                            <TouchableOpacity
+                              key={limit}
+                              style={[
+                                styles.recordsPerPageButton,
+                                {
+                                  backgroundColor: recordsPerPage === limit ? theme.colors.primary : theme.colors.background,
+                                  borderColor: theme.colors.border,
+                                },
+                              ]}
+                              onPress={() => {
+                                setRecordsPerPage(limit);
+                                setCurrentPage(1);
+                              }}
+                            >
+                              <Text
+                                style={[
+                                  styles.recordsPerPageButtonText,
+                                  {
+                                    color: recordsPerPage === limit ? '#FFFFFF' : theme.colors.textPrimary,
+                                  },
+                                ]}
+                              >
+                                {limit}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+                    </View>
+                    <View style={styles.paginationControls}>
+                      <TouchableOpacity
+                        style={[
+                          styles.paginationButton,
+                          {
+                            backgroundColor: currentPage === 1 ? theme.colors.background : theme.colors.primary,
+                            borderColor: theme.colors.border,
+                          },
+                        ]}
+                        onPress={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                        disabled={currentPage === 1}
+                      >
+                        <Icon 
+                          name="chevron-left" 
+                          size={20} 
+                          color={currentPage === 1 ? theme.colors.textSecondary : '#FFFFFF'} 
+                        />
+                      </TouchableOpacity>
+                      <Text style={[styles.pageNumber, { color: theme.colors.textPrimary }]}>
+                        Page {currentPage} of {totalPages}
+                      </Text>
+                      <TouchableOpacity
+                        style={[
+                          styles.paginationButton,
+                          {
+                            backgroundColor: currentPage >= totalPages ? theme.colors.background : theme.colors.primary,
+                            borderColor: theme.colors.border,
+                          },
+                        ]}
+                        onPress={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                        disabled={currentPage >= totalPages}
+                      >
+                        <Icon 
+                          name="chevron-right" 
+                          size={20} 
+                          color={currentPage >= totalPages ? theme.colors.textSecondary : '#FFFFFF'} 
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+              </>
             ) : (
               <EmptyState
                 icon="event"
                 title="No attendance records"
-                message="No attendance records found for the selected period"
+                message="No attendance records found"
               />
             )}
-            <Button
-              title="Filter by Date"
-              onPress={() => {
-                setShowCalendar(true);
-                setShowAllAttendance(false);
-              }}
-              variant="primary"
-              style={styles.selectDateButton}
-            />
-          </Card>
-        ) : viewMode === 'seats' ? (
-          attendanceLoading ? (
+          </View>
+        ) : attendanceLoading ? (
             <LoadingSpinner />
           ) : attendanceError ? (
             <EmptyState
@@ -793,15 +682,6 @@ export default function AttendanceScreen() {
                                 item.status === 'LATE' ? 'warning' : 'info'
                               }
                             />
-                            {item.status === 'PRESENT' && (
-                              <Button
-                                title="Mark Absent"
-                                onPress={() => handleMarkAbsent(actualStudentId, selectedDate, item.shift)}
-                                variant="outline"
-                                size="small"
-                                style={styles.markAbsentButton}
-                              />
-                            )}
             </View>
                         </View>
                       </Card>
@@ -817,123 +697,7 @@ export default function AttendanceScreen() {
               icon="event-seat"
               title="No attendance data"
               message={seatLayout ? "No attendance records found for this date. Seats are available but no students have checked in." : "Seat layout not configured. Please configure seats first."}
-            />
-          )
-        ) : (
-          shiftLoading ? (
-            <LoadingSpinner />
-          ) : shiftReport ? (
-            <>
-              {shiftReport.summary && (
-                <Card style={styles.summaryCard}>
-                  <View style={styles.summaryHeader}>
-                    <Text style={[styles.summaryTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
-                      Summary
-                    </Text>
-                    {selectedStudentsForAbsent.length > 0 && (
-                      <Button
-                        title={`Mark ${selectedStudentsForAbsent.length} Absent`}
-                        onPress={handleMarkMultipleAbsent}
-                        variant="error"
-                        size="small"
-                      />
-                    )}
-                  </View>
-                  <View style={styles.summaryGrid}>
-                    <View style={styles.summaryItem}>
-                      <Text style={[styles.summaryValue, { color: theme.colors.primary, ...theme.typography.h2 }]}>
-                        {shiftReport.summary.totalStudents}
-                      </Text>
-                      <Text style={[styles.summaryLabel, { color: theme.colors.textSecondary }]}>Total</Text>
-                    </View>
-                    <View style={styles.summaryItem}>
-                      <Text style={[styles.summaryValue, { color: theme.colors.success, ...theme.typography.h2 }]}>
-                        {shiftReport.summary.present}
-                      </Text>
-                      <Text style={[styles.summaryLabel, { color: theme.colors.textSecondary }]}>Present</Text>
-                    </View>
-                    <View style={styles.summaryItem}>
-                      <Text style={[styles.summaryValue, { color: theme.colors.error, ...theme.typography.h2 }]}>
-                        {shiftReport.summary.absent}
-                      </Text>
-                      <Text style={[styles.summaryLabel, { color: theme.colors.textSecondary }]}>Absent</Text>
-                    </View>
-                    <View style={styles.summaryItem}>
-                      <Text style={[styles.summaryValue, { color: theme.colors.warning, ...theme.typography.h2 }]}>
-                        {shiftReport.summary.late}
-                      </Text>
-                      <Text style={[styles.summaryLabel, { color: theme.colors.textSecondary }]}>Late</Text>
-                    </View>
-                  </View>
-                </Card>
-              )}
-              <FlatList
-                data={shiftReport.students}
-                renderItem={({ item }) => {
-                  const isSelected = selectedStudentsForAbsent.includes(item.studentId);
-                  return (
-                    <Card style={[styles.studentCard, isSelected && { borderColor: theme.colors.error, borderWidth: 2 }]}>
-                      <View style={styles.studentRow}>
-                        <TouchableOpacity
-                          style={styles.studentInfo}
-                          onPress={() => toggleStudentSelection(item.studentId)}
-                        >
-                          <Text style={[styles.studentName, { color: theme.colors.textPrimary, ...theme.typography.bodyLarge }]}>
-                            {item.studentName}
-                          </Text>
-                          <Text style={[styles.studentEmail, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-                            {item.studentEmail}
-                          </Text>
-                          {item.checkInTime && (
-                            <Text style={[styles.checkInTime, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-                              Check-in: {format(new Date(item.checkInTime), 'HH:mm')}
-                            </Text>
-                          )}
-                        </TouchableOpacity>
-                        <View style={styles.studentActions}>
-                          <Badge
-                            label={item.status}
-                            variant={
-                              item.status === 'PRESENT' ? 'success' :
-                              item.status === 'ABSENT' ? 'error' :
-                              item.status === 'LATE' ? 'warning' : 'info'
-                            }
-                          />
-                          {item.status === 'PRESENT' && (
-                            <Button
-                              title="Mark Absent"
-                              onPress={() => {
-                                const studentId = typeof item.studentId === 'object' ? item.studentId?._id : item.studentId;
-                                handleMarkAbsent(studentId || '', selectedDate, item.shift);
-                              }}
-                              variant="outline"
-                              size="small"
-                              style={styles.markAbsentButton}
-                            />
-                          )}
-                        </View>
-                      </View>
-                    </Card>
-                  );
-                }}
-                keyExtractor={(item) => item.studentId}
-                contentContainerStyle={styles.reportList}
-                ListEmptyComponent={
-                  <EmptyState
-                    icon="people"
-                    title="No students found"
-                    message="No students match the selected shift"
-                  />
-                }
-              />
-            </>
-          ) : (
-            <EmptyState
-              icon="list"
-              title="No attendance data"
-              message="Select a shift to view attendance report"
-            />
-          )
+          />
         )}
       </ScrollView>
     </View>
@@ -984,129 +748,6 @@ const styles = StyleSheet.create({
   infoText: {
     marginTop: 4,
   },
-  legend: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 24,
-    marginBottom: 16,
-    paddingHorizontal: 16,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  legendColor: {
-    width: 16,
-    height: 16,
-    borderRadius: 4,
-  },
-  legendText: {
-    fontWeight: '500',
-  },
-  seatsContainer: {
-    padding: 16,
-  },
-  seatsGrid: {
-    gap: 12,
-  },
-  seat: {
-    width: '22%',
-    aspectRatio: 1,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    margin: '1.5%',
-  },
-  seatNumber: {
-    fontWeight: '600',
-  },
-  headerActions: {
-    flexDirection: 'row',
-    gap: 12,
-    alignItems: 'center',
-  },
-  viewModeButton: {
-    padding: 4,
-  },
-  shiftFilters: {
-    flexDirection: 'row',
-    padding: 16,
-    gap: 8,
-  },
-  shiftButton: {
-    flex: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  shiftButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  summaryCard: {
-    margin: 16,
-    padding: 20,
-  },
-  summaryTitle: {
-    marginBottom: 16,
-    fontWeight: '600',
-  },
-  summaryGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  summaryItem: {
-    alignItems: 'center',
-  },
-  summaryValue: {
-    marginBottom: 4,
-    fontWeight: '700',
-  },
-  summaryLabel: {
-    fontSize: 12,
-  },
-  reportList: {
-    padding: 16,
-    paddingTop: 0,
-  },
-  studentCard: {
-    marginBottom: 12,
-    padding: 16,
-  },
-  studentRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  studentInfo: {
-    flex: 1,
-  },
-  studentName: {
-    marginBottom: 4,
-    fontWeight: '600',
-  },
-  studentEmail: {
-    marginTop: 2,
-  },
-  checkInTime: {
-    marginTop: 4,
-  },
-  summaryHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  studentActions: {
-    alignItems: 'flex-end',
-    gap: 8,
-  },
-  markAbsentButton: {
-    minWidth: 100,
-  },
   dateFilterContainer: {
     padding: 16,
     paddingTop: 0,
@@ -1128,38 +769,6 @@ const styles = StyleSheet.create({
   },
   dateFilterText: {
     fontWeight: '600',
-  },
-  allAttendanceCard: {
-    margin: 16,
-    padding: 20,
-    alignItems: 'center',
-  },
-  allAttendanceText: {
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  selectDateButton: {
-    minWidth: 150,
-  },
-  datePickerContainer: {
-    margin: 16,
-    padding: 16,
-    backgroundColor: '#F5F5F5',
-    borderRadius: 8,
-  },
-  datePickerLabel: {
-    marginBottom: 8,
-    fontSize: 14,
-  },
-  dateInput: {
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    marginBottom: 12,
-    fontSize: 16,
-  },
-  applyDateButton: {
-    width: '100%',
   },
   calendarCard: {
     margin: 16,
@@ -1213,55 +822,139 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
   },
-  allAttendanceHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
+  tableContainer: {
+    margin: 16,
+    marginTop: 0,
+    borderRadius: 12,
+    overflow: 'hidden',
   },
-  allAttendanceTitle: {
+  tableHeader: {
+    flexDirection: 'row',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderBottomWidth: 2,
+  },
+  tableHeaderText: {
+    fontSize: 12,
     fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  attendanceRecordCard: {
-    marginBottom: 12,
-    padding: 16,
-  },
-  attendanceRecordRow: {
+  tableRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
   },
-  attendanceRecordInfo: {
-    flex: 1,
+  tableCell: {
+    paddingHorizontal: 4,
+    justifyContent: 'center',
   },
-  attendanceRecordDate: {
-    marginBottom: 4,
-    fontWeight: '600',
+  tableCellText: {
+    fontSize: 14,
   },
-  attendanceRecordStatus: {
-    marginBottom: 2,
-  },
-  attendanceRecordShift: {
+  tableCellSubtext: {
+    fontSize: 12,
     marginTop: 2,
   },
-  studentRecordsContainer: {
-    marginTop: 12,
-    paddingTop: 12,
+  paginationContainer: {
+    padding: 16,
     borderTopWidth: 1,
-    borderTopColor: '#E5E5EA',
+    gap: 16,
   },
-  studentRecordItem: {
-    marginBottom: 4,
+  paginationInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 12,
   },
-  studentRecordName: {
+  paginationText: {
     fontSize: 12,
   },
-  moreRecordsText: {
-    marginTop: 4,
-    fontStyle: 'italic',
+  recordsPerPageContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  recordsPerPageLabel: {
+    fontSize: 12,
+  },
+  recordsPerPageButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  recordsPerPageButton: {
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  recordsPerPageButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  paginationControls: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+  },
+  paginationButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pageNumber: {
+    fontSize: 14,
+    fontWeight: '600',
+    minWidth: 100,
+    textAlign: 'center',
+  },
+  seatsContainer: {
+    padding: 16,
+  },
+  seatsGrid: {
+    gap: 12,
+  },
+  seat: {
+    width: '22%',
+    aspectRatio: 1,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    margin: '1.5%',
+  },
+  seatNumber: {
+    fontWeight: '600',
   },
   attendanceRecordsContainer: {
     padding: 16,
+  },
+  summaryCard: {
+    marginBottom: 16,
+    padding: 20,
+  },
+  summaryTitle: {
+    marginBottom: 16,
+    fontWeight: '600',
+  },
+  summaryGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  summaryItem: {
+    alignItems: 'center',
+  },
+  summaryValue: {
+    marginBottom: 4,
+    fontWeight: '700',
+  },
+  summaryLabel: {
+    fontSize: 12,
   },
   recordsList: {
     marginTop: 16,
@@ -1304,4 +997,3 @@ const styles = StyleSheet.create({
     gap: 8,
   },
 });
-

@@ -6,7 +6,8 @@
     "start": "npx expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "npx expo start --web"
+    "web": "npx expo start --web",
+    "web:clear": "npx expo start --web --clear"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "1.21.0",

@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   FlatList,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -16,6 +17,8 @@ import { Card } from '@/components/Card';
 import { Badge } from '@/components/Badge';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { EmptyState } from '@/components/EmptyState';
+import { Button } from '@/components/Button';
+import { SeatLayoutViewer } from '@/components/SeatLayoutViewer';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import {
   useGetSeatLayoutQuery,
@@ -25,13 +28,14 @@ export default function SeatsScreen() {
   const { theme } = useTheme();
   const { user, isLoading: authLoading } = useAuth();
   const router = useRouter();
+  const [viewMode, setViewMode] = useState<'list' | 'layout'>('layout');
+  const [selectedSeatId, setSelectedSeatId] = useState<string | null>(null);
 
   // Fetch seat layout
   const {
     data: seatLayoutData,
     isLoading: seatLayoutLoading,
     error: seatLayoutError,
-    refetch: refetchSeatLayout,
   } = useGetSeatLayoutQuery(
     {
       adminId: user?._id || user?.id || '',
@@ -45,20 +49,34 @@ export default function SeatsScreen() {
 
   // Extract seat layout data from response
   const seatLayout = seatLayoutData?.seatLayout;
-  const seats = seatLayoutData?.seats || [];
+  const layoutData = (seatLayoutData?.seatLayout as any)?.layoutData;
+  
+  // Seats can be in two places: direct seats array or in layoutData.seats
+  const seatsFromApi = seatLayoutData?.seats || [];
+  const seatsFromLayoutData = layoutData?.seats || [];
+  // Prioritize layoutData.seats if it has items, otherwise use API seats
+  const seats = seatsFromLayoutData.length > 0 ? seatsFromLayoutData : seatsFromApi;
+  
+  // Calculate stats from layoutData if available
+  const calculatedTotalSeats = layoutData?.seats?.length || 0;
+  const calculatedAvailableSeats = layoutData?.seats?.filter((s: any) => 
+    s.status === 'Available' || s.status === 'VACANT' || s.status === 'BLANK'
+  ).length || 0;
   
   // Debug: Log seat layout data
   React.useEffect(() => {
     if (seatLayoutData) {
       console.log('🪑 Seat Layout Data:', {
         hasSeatLayout: !!seatLayout,
-        hasSeats: !!seats,
+        hasLayoutData: !!layoutData,
+        hasSeatsFromApi: seatsFromApi.length > 0,
+        hasSeatsFromLayoutData: seatsFromLayoutData.length > 0,
         seatsCount: seats.length,
         seatLayout: seatLayout,
-        fullResponse: seatLayoutData,
+        layoutDataSeats: layoutData?.seats?.length || 0,
       });
     }
-  }, [seatLayoutData, seatLayout, seats]);
+  }, [seatLayoutData, seatLayout, layoutData, seats, seatsFromApi, seatsFromLayoutData]);
 
   const getSeatColor = (status: string) => {
     switch (status) {
@@ -94,7 +112,10 @@ export default function SeatsScreen() {
   };
 
   const renderSeatItem = ({ item }: { item: any }) => {
-    const seatColor = getSeatColor(item.status);
+    // Handle both API seat format and layoutData seat format
+    const seatNumber = item.seatNumber || item.label || 'N/A';
+    const seatStatus = item.status || 'Available';
+    const seatColor = getSeatColor(seatStatus);
 
     return (
       <TouchableOpacity
@@ -105,16 +126,16 @@ export default function SeatsScreen() {
           <View style={styles.seatHeader}>
             <View style={styles.seatInfo}>
               <Text style={[styles.seatNumber, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
-                {item.seatNumber}
+                {seatNumber}
               </Text>
               <Badge
-                label={getStatusLabel(item.status)}
+                label={getStatusLabel(seatStatus)}
                 variant={
-                  item.status === 'VACANT' || item.status === 'BLANK'
+                  seatStatus === 'VACANT' || seatStatus === 'BLANK' || seatStatus === 'Available'
                     ? 'success'
-                    : item.status === 'FILLED'
+                    : seatStatus === 'FILLED' || seatStatus === 'Reserved'
                     ? 'error'
-                    : item.status === 'FIXED'
+                    : seatStatus === 'FIXED'
                     ? 'warning'
                     : 'default'
                 }
@@ -128,6 +149,14 @@ export default function SeatsScreen() {
               <Icon name="person" size={16} color={theme.colors.textSecondary} />
               <Text style={[styles.studentName, { color: theme.colors.textSecondary, ...theme.typography.body }]}>
                 Student ID: {item.currentAssignment.studentId}
+              </Text>
+            </View>
+          )}
+          {item.category && layoutData?.categories && (
+            <View style={styles.studentInfo}>
+              <Icon name="category" size={16} color={theme.colors.textSecondary} />
+              <Text style={[styles.studentName, { color: theme.colors.textSecondary, ...theme.typography.body }]}>
+                Category: {layoutData.categories.find((c: any) => c.id === item.category)?.name || 'Unknown'}
               </Text>
             </View>
           )}
@@ -151,131 +180,141 @@ export default function SeatsScreen() {
         <Text style={[styles.headerTitle, { color: theme.colors.textPrimary, ...theme.typography.h2 }]}>
           Seats
         </Text>
-        <TouchableOpacity onPress={() => router.push('/seats/layout')}>
-          <Icon name="edit" size={24} color={theme.colors.primary} />
+        <TouchableOpacity 
+          onPress={() => setViewMode(viewMode === 'list' ? 'layout' : 'list')}
+          style={styles.headerButton}
+        >
+          <Icon 
+            name={viewMode === 'list' ? 'view-module' : 'list'} 
+            size={24} 
+            color={theme.colors.primary} 
+          />
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content}>
-        {/* Seat Layout Info Card */}
-        {seatLayout && (
-          <Card style={styles.infoCard}>
-            <Text style={[styles.infoTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
-              Seat Layout Information
-            </Text>
-            <View style={styles.infoGrid}>
-              <View style={styles.infoItem}>
-                <Text style={[styles.infoLabel, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-                  Total Seats
-                </Text>
-                <Text style={[styles.infoValue, { color: theme.colors.textPrimary, ...theme.typography.h2 }]}>
-                  {seatLayout.totalSeats || 0}
-                </Text>
-              </View>
-              <View style={styles.infoItem}>
-                <Text style={[styles.infoLabel, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-                  Available
-                </Text>
-                <Text style={[styles.infoValue, { color: theme.colors.success, ...theme.typography.h2 }]}>
-                  {seatLayout.availableSeats || 0}
-                </Text>
-              </View>
-              <View style={styles.infoItem}>
-                <Text style={[styles.infoLabel, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-                  Fixed
-                </Text>
-                <Text style={[styles.infoValue, { color: theme.colors.warning, ...theme.typography.h2 }]}>
-                  {seatLayout.fixedSeats || 0}
-                </Text>
-              </View>
-              <View style={styles.infoItem}>
-                <Text style={[styles.infoLabel, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-                  Blocked
-                </Text>
-                <Text style={[styles.infoValue, { color: theme.colors.error, ...theme.typography.h2 }]}>
-                  {seatLayout.blockedSeats || 0}
-                </Text>
-              </View>
-              <View style={styles.infoItem}>
-                <Text style={[styles.infoLabel, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-                  Layout Size
-                </Text>
-                <Text style={[styles.infoValue, { color: theme.colors.textPrimary, ...theme.typography.body }]}>
-                  {seatLayout.rows || 0} × {seatLayout.columns || 0}
-                </Text>
-              </View>
-            </View>
-          </Card>
-        )}
-
-        <View style={styles.legend}>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: theme.colors.success }]} />
-            <Text style={[styles.legendText, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-              Available
-            </Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: theme.colors.error }]} />
-            <Text style={[styles.legendText, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-              Occupied
-            </Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: theme.colors.warning }]} />
-            <Text style={[styles.legendText, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-              Fixed
-            </Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendColor, { backgroundColor: theme.colors.textSecondary }]} />
-            <Text style={[styles.legendText, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
-              Blocked
-            </Text>
-          </View>
-        </View>
-
-        {seatLayoutLoading ? (
-          <LoadingSpinner />
-        ) : seatLayoutError ? (
-          <EmptyState
-            icon="error-outline"
-            title="Error loading seats"
-            message="Please try again later"
+      {viewMode === 'layout' && layoutData ? (
+        <View style={styles.layoutContainer}>
+          <SeatLayoutViewer
+            layoutJson={layoutData}
+            onSeatPress={(seat) => {
+              setSelectedSeatId(seat.id);
+              Alert.alert('Seat Selected', `Seat ${seat.label} - ${seat.status}`);
+            }}
+            selectedSeatId={selectedSeatId}
+            style={styles.viewer}
           />
-        ) : seats.length > 0 ? (
-          <View style={styles.seatsList}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
-              Seats ({seats.length})
-            </Text>
-            <FlatList
-              data={seats}
-              renderItem={renderSeatItem}
-              keyExtractor={(item) => item._id || item.seatNumber?.toString()}
-              scrollEnabled={false}
-            />
+        </View>
+      ) : (
+        <ScrollView style={styles.content}>
+          {/* Seat Layout Info Card */}
+          {seatLayout && (
+            <Card style={styles.infoCard}>
+              <Text style={[styles.infoTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
+                Seat Layout Information
+              </Text>
+              <View style={styles.infoGrid}>
+                <View style={styles.infoItem}>
+                  <Text style={[styles.infoLabel, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
+                    Total Seats
+                  </Text>
+                  <Text style={[styles.infoValue, { color: theme.colors.textPrimary, ...theme.typography.h2 }]}>
+                    {seatLayout.totalSeats || calculatedTotalSeats}
+                  </Text>
+                </View>
+                <View style={styles.infoItem}>
+                  <Text style={[styles.infoLabel, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
+                    Available
+                  </Text>
+                  <Text style={[styles.infoValue, { color: theme.colors.success, ...theme.typography.h2 }]}>
+                    {seatLayout.availableSeats || calculatedAvailableSeats}
+                  </Text>
+                </View>
+                <View style={styles.infoItem}>
+                  <Text style={[styles.infoLabel, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
+                    Fixed
+                  </Text>
+                  <Text style={[styles.infoValue, { color: theme.colors.warning, ...theme.typography.h2 }]}>
+                    {seatLayout.fixedSeats || 0}
+                  </Text>
+                </View>
+                <View style={styles.infoItem}>
+                  <Text style={[styles.infoLabel, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
+                    Blocked
+                  </Text>
+                  <Text style={[styles.infoValue, { color: theme.colors.error, ...theme.typography.h2 }]}>
+                    {seatLayout.blockedSeats || 0}
+                  </Text>
+                </View>
+                <View style={styles.infoItem}>
+                  <Text style={[styles.infoLabel, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
+                    Layout Size
+                  </Text>
+                  <Text style={[styles.infoValue, { color: theme.colors.textPrimary, ...theme.typography.body }]}>
+                    {seatLayout.rows || 0} × {seatLayout.columns || 0}
+                  </Text>
+                </View>
+              </View>
+            </Card>
+          )}
+
+          <View style={styles.legend}>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendColor, { backgroundColor: theme.colors.success }]} />
+              <Text style={[styles.legendText, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
+                Available
+              </Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendColor, { backgroundColor: theme.colors.error }]} />
+              <Text style={[styles.legendText, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
+                Occupied
+              </Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendColor, { backgroundColor: theme.colors.warning }]} />
+              <Text style={[styles.legendText, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
+                Fixed
+              </Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendColor, { backgroundColor: theme.colors.textSecondary }]} />
+              <Text style={[styles.legendText, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
+                Blocked
+              </Text>
+            </View>
           </View>
-        ) : (
-          <Card style={styles.emptyCard}>
+
+          {seatLayoutLoading ? (
+            <LoadingSpinner />
+          ) : seatLayoutError ? (
             <EmptyState
-              icon="event-seat"
-              title="No seats configured"
-              message={seatLayout ? "Seat layout exists but no individual seats have been created yet. Click edit to configure seats." : "Seat layout not configured. Click edit to create a new layout."}
+              icon="error-outline"
+              title="Error loading seats"
+              message="Please try again later"
             />
-            {seatLayout && (
-              <TouchableOpacity
-                style={[styles.createButton, { backgroundColor: theme.colors.primary }]}
-                onPress={() => router.push('/seats/layout')}
-              >
-                <Icon name="add" size={20} color="#FFFFFF" />
-                <Text style={[styles.createButtonText, { color: '#FFFFFF' }]}>
-                  Configure Seats
-                </Text>
-              </TouchableOpacity>
-            )}
-          </Card>
-        )}
-      </ScrollView>
+          ) : seats.length > 0 ? (
+            <View style={styles.seatsList}>
+              <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
+                Seats ({seats.length})
+              </Text>
+              <FlatList
+                data={seats}
+                renderItem={renderSeatItem}
+                keyExtractor={(item) => item._id || item.id || item.seatNumber?.toString() || item.label}
+                scrollEnabled={false}
+              />
+            </View>
+          ) : (
+            <Card style={styles.emptyCard}>
+              <EmptyState
+                icon="event-seat"
+                title="No seats configured"
+                message={seatLayout || layoutData ? "Seat layout exists but no individual seats have been created yet. Please configure seats via the backend." : "Seat layout not configured. Please create a layout via the backend."}
+              />
+            </Card>
+          )}
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -294,6 +333,13 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontWeight: '700',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  headerButton: {
+    padding: 4,
   },
   content: {
     flex: 1,
@@ -396,6 +442,12 @@ const styles = StyleSheet.create({
   createButtonText: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  layoutContainer: {
+    flex: 1,
+  },
+  viewer: {
+    flex: 1,
   },
 });
 

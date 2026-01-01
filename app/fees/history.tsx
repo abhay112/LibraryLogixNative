@@ -101,7 +101,7 @@ export default function FeesHistoryScreen() {
           
           <View style={styles.feeAmountRow}>
             <Text style={[styles.feeAmount, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
-              ${amount.toFixed(2)}
+              ₹{amount.toFixed(2)}
             </Text>
             {item.paymentMethod && (
               <Text style={[styles.paymentMethod, { color: theme.colors.textSecondary, ...theme.typography.caption }]}>
@@ -145,7 +145,7 @@ export default function FeesHistoryScreen() {
                   Total Paid
                 </Text>
                 <Text style={[styles.summaryValue, { color: theme.colors.success, ...theme.typography.h2 }]}>
-                  ${totalPaid.toFixed(2)}
+                  ₹{totalPaid.toFixed(2)}
                 </Text>
               </View>
             </View>
@@ -158,7 +158,7 @@ export default function FeesHistoryScreen() {
                   Total Pending
                 </Text>
                 <Text style={[styles.summaryValue, { color: theme.colors.warning, ...theme.typography.h2 }]}>
-                  ${totalPending.toFixed(2)}
+                  ₹{totalPending.toFixed(2)}
                 </Text>
               </View>
             </View>

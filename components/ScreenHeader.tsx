@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useAuth } from '@/contexts/AuthContext';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { CommonStyles } from '@/constants/CommonStyles';
 
@@ -10,6 +11,7 @@ interface ScreenHeaderProps {
   showBackButton?: boolean;
   rightComponent?: React.ReactNode;
   onBackPress?: () => void;
+  fallbackRoute?: string;
 }
 
 export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
@@ -17,15 +19,23 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
   showBackButton = true,
   rightComponent,
   onBackPress,
+  fallbackRoute,
 }) => {
   const { theme } = useTheme();
+  const { user } = useAuth();
   const router = useRouter();
   
   const handleBack = () => {
     if (onBackPress) {
       onBackPress();
     } else {
-      router.back();
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        // Navigate to appropriate default route
+        const defaultRoute = fallbackRoute || (user?.role === 'admin' ? '/admin/' : '/student/');
+        router.replace(defaultRoute);
+      }
     }
   };
   

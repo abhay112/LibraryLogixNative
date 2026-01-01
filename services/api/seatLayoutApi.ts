@@ -14,6 +14,8 @@ export interface Seat {
 }
 
 export interface SeatLayout {
+  fixedSeats: number;
+  blockedSeats: number;
   _id: string;
   libraryId: string;
   adminId: string;

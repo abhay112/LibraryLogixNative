@@ -17,3 +17,4 @@ export { ButtonGroup } from './ButtonGroup';
 export { TextArea } from './TextArea';
 export { FeatureCard } from './FeatureCard';
 export { ProtectedRoute } from './ProtectedRoute';
+export { SeatLayoutViewer } from './SeatLayoutViewer';

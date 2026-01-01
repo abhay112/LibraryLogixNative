@@ -30,6 +30,16 @@ export default function SubmitQueryScreen() {
   
   const [createQuery, { isLoading: loading }] = useCreateQueryMutation();
 
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      // Navigate to appropriate dashboard based on user role
+      const routePrefix = user?.role === 'admin' ? '/admin' : '/student';
+      router.replace(`${routePrefix}/`);
+    }
+  };
+
   const priorities = [
     { value: 'LOW', label: 'Low' },
     { value: 'MEDIUM', label: 'Medium' },
@@ -54,7 +64,7 @@ export default function SubmitQueryScreen() {
       }).unwrap();
       
       Alert.alert('Success', 'Query submitted successfully', [
-        { text: 'OK', onPress: () => router.back() },
+        { text: 'OK', onPress: handleBack },
       ]);
     } catch (error: any) {
       Alert.alert('Error', error?.data?.message || 'Failed to submit query. Please try again.');
@@ -64,7 +74,7 @@ export default function SubmitQueryScreen() {
   return (
     <ScreenWrapper keyboardAvoiding>
       <View style={{ backgroundColor: theme.colors.background, flex: 1 }}>
-        <ScreenHeader title="Submit Query" />
+        <ScreenHeader title="Submit Query" onBackPress={handleBack} />
 
         <ScrollView
           style={CommonStyles.content}

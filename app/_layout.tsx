@@ -13,6 +13,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { SideMenu } from '@/components/SideMenu';
 import { store } from '@/store/store';
 import { formatRole } from '@/utils/format';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -48,7 +49,7 @@ function GlobalSideMenu() {
 
 function RootLayoutNav() {
   const { theme, colorScheme } = useTheme();
-  const { isAuthenticated, isLoading, user } = useAuth();
+  const { isAuthenticated, user } = useAuth();
 
   return (
     <>
@@ -60,7 +61,6 @@ function RootLayoutNav() {
             backgroundColor: theme.colors.background,
           },
         }}
-        initialRouteName={isAuthenticated ? (user?.role === 'admin' ? 'admin' : 'student') : '(auth)'}
       >
         <Stack.Screen name="index" />
         <Stack.Screen name="(auth)" />
@@ -119,15 +119,17 @@ export default function RootLayout() {
   }, [fontsLoaded]);
 
   return (
-    <Provider store={store}>
-      <ThemeProvider>
-        <AuthProvider>
-          <SideMenuProvider>
-            <RootLayoutNav />
-          </SideMenuProvider>
-        </AuthProvider>
-      </ThemeProvider>
-    </Provider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <Provider store={store}>
+        <ThemeProvider>
+          <AuthProvider>
+            <SideMenuProvider>
+              <RootLayoutNav />
+            </SideMenuProvider>
+          </AuthProvider>
+        </ThemeProvider>
+      </Provider>
+    </GestureHandlerRootView>
   );
 }
 

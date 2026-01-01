@@ -4,7 +4,7 @@ import { View, ActivityIndicator } from 'react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 
 export default function Index() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
   const { theme } = useTheme();
 
   if (isLoading) {
@@ -19,7 +19,8 @@ export default function Index() {
     return <Redirect href="/(auth)/login" />;
   }
 
-  // Redirect to tabs with index (dashboard) as default
-  return <Redirect href="/(tabs)/index" />;
+  // Redirect to admin/student route based on role
+  const routePrefix = user?.role === 'admin' ? '/admin' : '/student';
+  return <Redirect href={`${routePrefix}/`} />;
 }
 

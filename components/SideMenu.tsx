@@ -7,6 +7,7 @@ import {
   Modal,
   ScrollView,
   Animated,
+  Platform,
 } from 'react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -70,18 +71,21 @@ export const SideMenu: React.FC<SideMenuProps> = ({
   const slideAnim = React.useRef(new Animated.Value(-320)).current;
   const opacity = React.useRef(new Animated.Value(0)).current;
 
+  // Native driver is not supported on web
+  const useNativeDriver = Platform.OS !== 'web';
+
   React.useEffect(() => {
     if (isOpen) {
       Animated.parallel([
         Animated.timing(slideAnim, {
           toValue: 0,
           duration: 300,
-          useNativeDriver: true,
+          useNativeDriver: useNativeDriver,
         }),
         Animated.timing(opacity, {
           toValue: 1,
           duration: 300,
-          useNativeDriver: true,
+          useNativeDriver: useNativeDriver,
         }),
       ]).start();
     } else {
@@ -89,16 +93,16 @@ export const SideMenu: React.FC<SideMenuProps> = ({
         Animated.timing(slideAnim, {
           toValue: -320,
           duration: 300,
-          useNativeDriver: true,
+          useNativeDriver: useNativeDriver,
         }),
         Animated.timing(opacity, {
           toValue: 0,
           duration: 300,
-          useNativeDriver: true,
+          useNativeDriver: useNativeDriver,
         }),
       ]).start();
     }
-  }, [isOpen]);
+  }, [isOpen, useNativeDriver]);
 
   return (
     <Modal

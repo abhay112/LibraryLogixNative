@@ -45,22 +45,32 @@ const baseQueryWithReauth: BaseQueryFn<
         );
 
         if (refreshResult.data && !refreshResult.error) {
-          const response = refreshResult.data as { success: boolean; data: { accessToken: string } };
-          
-          if (response.success && response.data) {
-            // Store new access token
-            await Storage.setItem('accessToken', response.data.accessToken);
+          try {
+            const response = refreshResult.data as { success: boolean; data?: { accessToken: string; expiresIn?: number } };
             
-            // Retry the original request with new token
-            result = await baseQuery(args, api, extraOptions);
-          } else {
-            // Refresh failed, clear tokens and user data
+            if (response.success && response.data?.accessToken) {
+              // Store new access token
+              await Storage.setItem('accessToken', response.data.accessToken);
+              
+              // Retry the original request with new token
+              result = await baseQuery(args, api, extraOptions);
+            } else {
+              // Refresh failed - invalid response structure
+              console.warn('Token refresh failed: Invalid response structure', response);
+              await Storage.removeItem('accessToken');
+              await Storage.removeItem('refreshToken');
+              await Storage.removeItem('user');
+            }
+          } catch (parseError) {
+            // Error parsing response
+            console.error('Token refresh failed: Error parsing response', parseError);
             await Storage.removeItem('accessToken');
             await Storage.removeItem('refreshToken');
             await Storage.removeItem('user');
           }
         } else {
-          // Refresh failed, clear tokens and user data
+          // Refresh failed - API error
+          console.warn('Token refresh failed: API error', refreshResult.error);
           await Storage.removeItem('accessToken');
           await Storage.removeItem('refreshToken');
           await Storage.removeItem('user');

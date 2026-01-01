@@ -129,7 +129,7 @@ export default function FeesScreen() {
           </View>
           <View style={styles.feeAmountRow}>
             <Text style={[styles.feeAmount, { color: theme.colors.textPrimary, ...theme.typography.h2 }]}>
-              ${amount.toFixed(2)}
+              ₹{amount.toFixed(2)}
             </Text>
             {item.status !== 'paid' && (
               <Button
@@ -194,7 +194,7 @@ export default function FeesScreen() {
                   Total Pending
                 </Text>
                 <Text style={[styles.totalAmount, { color: theme.colors.warning, ...theme.typography.h1 }]}>
-                  ${totalPending.toFixed(2)}
+                  ₹{totalPending.toFixed(2)}
                 </Text>
               </View>
               <View style={[styles.totalIcon, { backgroundColor: theme.colors.warning + '20' }]}>

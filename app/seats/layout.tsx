@@ -1,208 +1,130 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
-  FlatList,
+  Alert,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useSegments } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { Card } from '@/components/Card';
-import { Button } from '@/components/Button';
-import { Input } from '@/components/Input';
+import { SeatLayoutViewer } from '@/components/SeatLayoutViewer';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import { useSaveLayoutJsonMutation } from '@/services/api/seatLayoutApi';
-import { Alert } from 'react-native';
+import { useGetSeatLayoutQuery } from '@/services/api/seatLayoutApi';
 
-// Mock seat grid
-const generateSeatGrid = (rows: number, cols: number) => {
-  const seats = [];
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      seats.push({
-        id: `${String.fromCharCode(65 + row)}-${col + 1}`,
-        row: String.fromCharCode(65 + row),
-        col: col + 1,
-        status: 'available' as const,
-      });
-    }
-  }
-  return seats;
+// Default empty layout structure
+const defaultLayout: any = {
+  name: 'New Layout',
+  categories: [
+    {
+      id: 'cat-1',
+      name: 'Standard',
+      color: '#000000',
+      textColor: '#f7f7f7',
+    },
+  ],
+  sections: [
+    {
+      id: 'sec-1',
+      name: 'Section 1',
+      color: '#000000',
+      stroke: '#000000',
+      freeSeating: false,
+    },
+  ],
+  seats: [],
+  text: [],
+  shapes: [],
+  polylines: [],
+  images: [],
+  workspace: {
+    initialViewBoxScale: undefined,
+    initialViewBoxScaleForWidth: undefined,
+    visibilityOffset: 0,
+    airplaneMode: false,
+  },
 };
 
 export default function SeatLayoutEditorScreen() {
   const { theme } = useTheme();
   const { user } = useAuth();
   const router = useRouter();
-  const [rows, setRows] = useState(5);
-  const [cols, setCols] = useState(8);
-  const [seats, setSeats] = useState(generateSeatGrid(5, 8));
-  const [selectedSeat, setSelectedSeat] = useState<string | null>(null);
-  const [previewMode, setPreviewMode] = useState(false);
-  const [saveLayoutJson, { isLoading: saving }] = useSaveLayoutJsonMutation();
+  const segments = useSegments();
+  const [layoutData, setLayoutData] = useState(defaultLayout);
+  const [selectedSeatId, setSelectedSeatId] = useState<string | null>(null);
 
-  const handleSeatPress = (seatId: string) => {
-    if (previewMode) return;
-    setSelectedSeat(seatId);
-  };
-
-  const handleUpdateLayout = () => {
-    setSeats(generateSeatGrid(rows, cols));
-  };
-
-  const handleSave = async () => {
-    if (!user?._id && !user?.id || !user?.libraryId) {
-      Alert.alert('Error', 'User information is missing');
-      return;
+  // Determine the back route based on user role
+  const getBackRoute = () => {
+    if (user?.role === 'admin') {
+      return '/admin/seats';
     }
+    return '/student/seats';
+  };
 
-    try {
-      // Convert seats array to layout JSON format
-      const layoutData = {
-        rows,
-        cols,
-        seats: seats.map((seat) => ({
-          id: seat.id,
-          row: seat.row,
-          col: seat.col,
-          status: seat.status,
-        })),
-      };
-
-      await saveLayoutJson({
-        libraryId: user.libraryId,
-        adminId: user._id || user.id || '',
-        layoutData,
-      }).unwrap();
-
-      Alert.alert('Success', 'Layout saved successfully', [
-        { text: 'OK', onPress: () => router.back() },
-      ]);
-    } catch (error: any) {
-      Alert.alert('Error', error?.data?.message || 'Failed to save layout');
+  const handleBack = () => {
+    const backRoute = getBackRoute();
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace(backRoute as any);
     }
   };
 
-  const renderSeat = ({ item }: { item: typeof seats[0] }) => {
-    const isSelected = selectedSeat === item.id;
+  // Fetch existing layout if available
+  const {
+    data: seatLayoutData,
+    isLoading: loading,
+  } = useGetSeatLayoutQuery(
+    {
+      adminId: user?._id || user?.id || '',
+      libraryId: user?.libraryId || '',
+    },
+    {
+      skip: (!user?._id && !user?.id) || !user?.libraryId,
+    }
+  );
 
+  useEffect(() => {
+    // If layout data exists from API, use it
+    const layoutDataFromApi = (seatLayoutData?.seatLayout as any)?.layoutData;
+    if (layoutDataFromApi) {
+      setLayoutData(layoutDataFromApi);
+    }
+  }, [seatLayoutData]);
+
+  const handleSeatPress = (seat: any) => {
+    setSelectedSeatId(seat.id);
+    Alert.alert('Seat Selected', `Seat ${seat.label} - ${seat.status}`);
+  };
+
+  if (loading) {
     return (
-      <TouchableOpacity
-        style={[
-          styles.seat,
-          {
-            backgroundColor: isSelected
-              ? theme.colors.primary
-              : item.status === 'available'
-              ? theme.colors.success + '20'
-              : theme.colors.surface,
-            borderColor: isSelected ? theme.colors.primary : theme.colors.border,
-          },
-        ]}
-        onPress={() => handleSeatPress(item.id)}
-      >
-        <Text
-          style={[
-            styles.seatText,
-            {
-              color: isSelected ? '#FFFFFF' : theme.colors.textPrimary,
-              ...theme.typography.caption,
-            },
-          ]}
-        >
-          {item.id}
-        </Text>
-      </TouchableOpacity>
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <LoadingSpinner />
+      </View>
     );
-  };
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <View style={[styles.header, { borderBottomColor: theme.colors.border }]}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={handleBack}>
           <Icon name="arrow-back" size={24} color={theme.colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.colors.textPrimary, ...theme.typography.h2 }]}>
-          Seat Layout Editor
+        <Text style={[styles.headerTitle, { color: theme.colors.textPrimary }]}>
+          Seat Layout
         </Text>
-        <TouchableOpacity onPress={() => setPreviewMode(!previewMode)}>
-          <Icon
-            name={previewMode ? 'edit' : 'visibility'}
-            size={24}
-            color={theme.colors.primary}
-          />
-        </TouchableOpacity>
+        <View style={{ width: 24 }} />
       </View>
 
-      {!previewMode && (
-        <Card style={styles.configCard}>
-          <Text style={[styles.configTitle, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
-            Layout Configuration
-          </Text>
-          <View style={styles.configRow}>
-            <View style={styles.configItem}>
-              <Text style={[styles.configLabel, { color: theme.colors.textSecondary, ...theme.typography.body }]}>
-                Rows
-              </Text>
-              <Input
-                value={rows.toString()}
-                onChangeText={(text) => setRows(parseInt(text) || 1)}
-                keyboardType="number-pad"
-                style={styles.configInput}
-              />
-            </View>
-            <View style={styles.configItem}>
-              <Text style={[styles.configLabel, { color: theme.colors.textSecondary, ...theme.typography.body }]}>
-                Columns
-              </Text>
-              <Input
-                value={cols.toString()}
-                onChangeText={(text) => setCols(parseInt(text) || 1)}
-                keyboardType="number-pad"
-                style={styles.configInput}
-              />
-            </View>
-            <Button
-              title="Update"
-              onPress={handleUpdateLayout}
-              variant="outline"
-              size="small"
-              style={styles.updateButton}
-            />
-          </View>
-        </Card>
-      )}
-
-      <ScrollView style={styles.content} contentContainerStyle={styles.seatsContainer}>
-        <FlatList
-          data={seats}
-          renderItem={renderSeat}
-          keyExtractor={(item) => item.id}
-          numColumns={cols}
-          scrollEnabled={false}
-          contentContainerStyle={styles.seatsGrid}
-        />
-      </ScrollView>
-
-      {!previewMode && (
-        <View style={[styles.footer, { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.border }]}>
-          {saving ? (
-            <LoadingSpinner />
-          ) : (
-            <Button
-              title="Save Layout"
-              onPress={handleSave}
-              variant="primary"
-              loading={saving}
-              style={styles.saveButton}
-            />
-          )}
-        </View>
-      )}
+      <SeatLayoutViewer
+        layoutJson={layoutData}
+        onSeatPress={handleSeatPress}
+        selectedSeatId={selectedSeatId}
+        style={styles.viewer}
+      />
     </View>
   );
 }
@@ -220,59 +142,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   headerTitle: {
+    fontSize: 18,
     fontWeight: '700',
   },
-  configCard: {
-    margin: 16,
-    padding: 16,
-  },
-  configTitle: {
-    marginBottom: 16,
-  },
-  configRow: {
-    flexDirection: 'row',
-    gap: 12,
-    alignItems: 'flex-end',
-  },
-  configItem: {
+  viewer: {
     flex: 1,
-  },
-  configLabel: {
-    marginBottom: 8,
-  },
-  configInput: {
-    marginBottom: 0,
-  },
-  updateButton: {
-    marginBottom: 0,
-  },
-  content: {
-    flex: 1,
-  },
-  seatsContainer: {
-    padding: 16,
-  },
-  seatsGrid: {
-    gap: 8,
-  },
-  seat: {
-    width: '11%',
-    aspectRatio: 1,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    margin: '0.5%',
-  },
-  seatText: {
-    fontWeight: '600',
-  },
-  footer: {
-    padding: 16,
-    borderTopWidth: 1,
-  },
-  saveButton: {
-    width: '100%',
   },
 });
 

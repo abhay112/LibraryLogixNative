@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
@@ -25,9 +26,20 @@ const paymentMethods = [
 
 export default function PaymentScreen() {
   const { theme } = useTheme();
+  const { user } = useAuth();
   const router = useRouter();
   const { id } = useLocalSearchParams();
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
+
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      // Navigate to appropriate fees page based on user role
+      const routePrefix = user?.role === 'admin' ? '/admin/fees' : '/fees';
+      router.replace(routePrefix);
+    }
+  };
   
   // Fetch fee details
   const {
@@ -85,7 +97,7 @@ export default function PaymentScreen() {
       await updateFees(id as string).unwrap();
       
       Alert.alert('Success', 'Payment processed successfully', [
-        { text: 'OK', onPress: () => router.back() },
+        { text: 'OK', onPress: handleBack },
       ]);
     } catch (error: any) {
       Alert.alert('Error', error?.data?.message || 'Payment failed. Please try again.');
@@ -95,7 +107,7 @@ export default function PaymentScreen() {
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <View style={[styles.header, { borderBottomColor: theme.colors.border }]}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={handleBack}>
           <Icon name="arrow-back" size={24} color={theme.colors.textPrimary} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: theme.colors.textPrimary, ...theme.typography.h2 }]}>
@@ -140,7 +152,7 @@ export default function PaymentScreen() {
                   Total Amount
                 </Text>
                 <Text style={[styles.totalAmount, { color: theme.colors.primary, ...theme.typography.h2 }]}>
-                  ${(fee.amount || fee.fees?.[0]?.amount || 0).toFixed(2)}
+                  ₹{(fee.amount || fee.fees?.[0]?.amount || 0).toFixed(2)}
                 </Text>
               </View>
             </Card>
@@ -228,7 +240,7 @@ export default function PaymentScreen() {
                   Amount to Pay
                 </Text>
                 <Text style={[styles.footerAmount, { color: theme.colors.textPrimary, ...theme.typography.h3 }]}>
-                  ${(fee.amount || fee.fees?.[0]?.amount || 0).toFixed(2)}
+                  ₹{(fee.amount || fee.fees?.[0]?.amount || 0).toFixed(2)}
                 </Text>
               </View>
               <Button
